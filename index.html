@@ -34,10 +34,15 @@
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;padding:0;background:var(--bg-app);color:var(--text-light);
     font-family:'Segoe UI',Helvetica,Arial,sans-serif;overflow:hidden;}
-  .app{display:grid;grid-template-columns:1fr 340px;grid-template-rows:1fr;height:100vh;overflow:hidden;}
-  .stage{position:relative;padding:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
-  .float-controls-left{position:absolute;top:14px;left:14px;z-index:10;display:flex;gap:6px;}
-  .float-controls-right{position:absolute;top:14px;right:14px;z-index:10;display:flex;gap:6px;}
+  .app{display:grid;grid-template-columns:1fr 340px;grid-template-rows:60px 1fr;height:100vh;width:100vw;overflow:hidden;}
+  .topbar{grid-column:1;grid-row:1;background:var(--bg-panel);border-bottom:1px solid var(--border-panel);
+    padding:10px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 6px rgba(0,0,0,.35);z-index:100;height:60px;}
+  .topbar-left{display:flex;gap:6px;align-items:center;}
+  .topbar-right{display:flex;gap:6px;align-items:center;}
+  .topbar-center{flex:1;display:flex;justify-content:center;align-items:center;}
+  .project-title-display{font-size:16px;font-weight:600;color:var(--text-light);letter-spacing:0.3px;}
+  .stage{grid-column:1;grid-row:2;position:relative;padding:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
+  aside{grid-column:2;grid-row:1 / -1;width:340px;}
   button{background:var(--bg-panel-alt);border:1px solid var(--border-panel);color:var(--text-light);
     padding:9px 14px;border-radius:6px;font-size:13px;cursor:pointer;transition:background .15s,border-color .15s;
     box-shadow:0 2px 6px rgba(0,0,0,.35);}
@@ -56,9 +61,6 @@
   svg{width:100%;height:100%;max-height:100%;}
   svg text{user-select:none;}
 
-  .matrix-overlay{position:fixed;inset:0;background:var(--bg-app);z-index:50;padding:28px 32px;
-    display:flex;flex-direction:column;gap:14px;}
-  .matrix-overlay h2{margin:0;font-size:18px;color:var(--text-light);}
 
   .pipe-line{fill:none;stroke:var(--pipe-idle);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;transition:stroke .4s ease;}
   .pipe-hit{fill:none;stroke:transparent;stroke-width:16;pointer-events:stroke;}
@@ -166,9 +168,11 @@
   .trip-table tbody th{background:var(--bg-panel);color:var(--text-light);text-align:left;
     white-space:nowrap;position:sticky;left:0;z-index:1;}
   .trip-table thead th:first-child{position:sticky;left:0;top:0;z-index:3;}
-  .trip-cell{width:18px;height:18px;margin:0 auto;border:1px solid var(--border-panel);border-radius:4px;
-    cursor:pointer;background:var(--bg-panel-alt);transition:background .12s,border-color .12s;}
-  .trip-cell.checked{background:var(--red);border-color:var(--red);}
+  .trip-cell{width:24px;height:24px;margin:0 auto;border:1px solid var(--border-panel);border-radius:4px;
+    cursor:pointer;background:var(--bg-panel-alt);transition:background .12s,border-color .12s;
+    display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-dark);}
+  .trip-cell.trip{background:var(--red);border-color:var(--red);}
+  .trip-cell.manual{background:var(--orange);border-color:var(--orange);}
   .trip-cell:hover{border-color:var(--gray-4);}
   #matrizTableWrap{overflow:auto;flex:1;min-height:0;}
 
@@ -271,23 +275,30 @@
   window.SUPABASE_ANON_KEY = 'sb_publishable_9dfVVLUMJtCSlN5RSAxt-Q_4hBg95gJ';
 </script>
 <div class="app">
-  <div class="stage">
-    <div class="float-controls-left">
+  <div class="topbar">
+    <div class="topbar-left">
       <button id="btnProyectos" title="Proyectos guardados">📁 Proyectos</button>
+      <button id="btnExportJson" title="Exportar proyecto como JSON">📤 Exportar</button>
       <button id="btnGuardar" class="btn-fixed-width" title="Guardar proyecto en Supabase">💾 Guardar</button>
       <button id="btnEditMode" class="btn-fixed-width" title="Modo edición">✏️ Editar</button>
-      <span id="readonlyIndicator" style="display:none;background:var(--bg-panel-alt);border:1px solid var(--border-panel);padding:9px 14px;border-radius:6px;font-size:13px;color:var(--orange);box-shadow:0 2px 6px rgba(0,0,0,.35);">🔒 Solo lectura</span>
+      <span id="readonlyIndicator" style="display:none;padding:9px 14px;border-radius:6px;font-size:13px;color:var(--orange);">🔒 Solo lectura</span>
     </div>
-    <div class="float-controls-right">
+    <div class="topbar-center">
+      <span id="projectTitle" class="project-title-display" style="display:none;"></span>
+    </div>
+    <div class="topbar-right">
       <div class="transition-control" title="Tiempo de transición naranja → rojo en los caños">
         <label for="transitionInput">Transición</label>
-        <input type="number" id="transitionInput" min="1" max="15" step="1" value="1">
+        <input type="number" id="transitionInput" min="1" max="15" step="1" value="5">
         <span>s</span>
       </div>
       <button id="btnMatriz" title="Matriz de trips">📊 Matriz</button>
       <button id="btnReset" title="Reset planta">↺ Reset</button>
+      <button id="btnBackToDiagramTop" style="display:none;" title="Volver al diagrama">← Volver al diagrama</button>
     </div>
+  </div>
 
+  <div class="stage">
     <div class="diagram-wrap">
       <svg id="pfdSvg" viewBox="0 0 800 420" xmlns="http://www.w3.org/2000/svg">
         <g id="canvasGroup"></g>
@@ -300,6 +311,17 @@
     </div>
 
     <div class="causa-bar" id="causaBar"></div>
+
+    <div id="matrizOverlay" style="display:none;position:absolute;inset:0;background:var(--bg-app);z-index:50;padding:14px;flex-direction:column;gap:10px;">
+      <div style="display:flex;gap:10px;align-items:center;">
+        <h2 style="margin:0;font-size:18px;">Matriz de causas y efectos</h2>
+      </div>
+      <div class="matrix-toolbar">
+        <button id="btnAddCausa">+ Agregar causa</button>
+        <button id="btnDeleteCausa" class="danger" disabled>🗑 Eliminar causa</button>
+      </div>
+      <div id="matrizTableWrap" style="flex:1;overflow:auto;"></div>
+    </div>
   </div>
 
   <aside>
@@ -317,7 +339,7 @@
       <div id="selPanel"></div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="referencesDiagram">
       <h3>Referencias</h3>
       <div class="legend-row"><span class="swatch green"></span> Caño con caudal</div>
       <div class="legend-row"><span class="swatch orange"></span> Caño en transición</div>
@@ -325,19 +347,32 @@
       <div class="legend-row"><span class="swatch dot-green"></span> Equipo normal / válvula abierta</div>
       <div class="legend-row"><span class="swatch dot-red"></span> Equipo detenido / válvula cerrada</div>
     </div>
-  </aside>
-</div>
 
-<div class="matrix-overlay" id="matrizOverlay" style="display:none;">
-  <button id="btnBackToDiagram" style="width:fit-content;">← Volver al diagrama</button>
-  <h2>Matriz de causas y efectos</h2>
-  <div class="matrix-toolbar">
-    <button id="btnAddCausa">+ Agregar causa</button>
-    <button id="btnDeleteCausa" class="danger" disabled>🗑 Eliminar causa</button>
-    <p class="hint" style="margin:0;">Click en una fila la selecciona (para borrarla); click en el nombre la renombra; el ⋮⋮ la reordena.</p>
-  </div>
-  <p class="hint">Marcá una celda para configurar un trip directo: la causa de esa fila cierra/detiene el efecto de esa columna.</p>
-  <div id="matrizTableWrap"></div>
+    <div class="panel" id="referencesMatrix" style="display:none;">
+      <h3>Referencias de la Matriz</h3>
+      <div class="legend-row" style="align-items:flex-start;">
+        <div style="width:24px;height:24px;background:var(--red);border:1px solid var(--red);border-radius:4px;flex:none;"></div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <span style="font-weight:600;">Trip automático</span>
+          <span style="font-size:11px;color:var(--text-dim-light);">La causa activa tripea el efecto automáticamente</span>
+        </div>
+      </div>
+      <div class="legend-row" style="align-items:flex-start;">
+        <div style="width:24px;height:24px;background:var(--orange);border:1px solid var(--orange);border-radius:4px;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-dark);">1</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <span style="font-weight:600;">Reposición manual</span>
+          <span style="font-size:11px;color:var(--text-dim-light);">Permite reponer el efecto manualmente aunque la causa esté activa</span>
+        </div>
+      </div>
+      <div class="legend-row" style="align-items:flex-start;">
+        <div style="width:24px;height:24px;background:var(--bg-panel-alt);border:1px solid var(--border-panel);border-radius:4px;flex:none;"></div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <span style="font-weight:600;">Sin relación</span>
+          <span style="font-size:11px;color:var(--text-dim-light);">La causa no afecta este efecto</span>
+        </div>
+      </div>
+    </div>
+  </aside>
 </div>
 
 <div class="float-editor" id="floatEditor" style="display:none;">
@@ -356,10 +391,10 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="projectsModal" style="display:none;">
+<div class="modal-overlay" id="inicioModal" style="display:none;">
   <div class="modal-box projects-panel">
     <div class="admin-header">
-      <p class="hint" style="margin:0;"><b>Proyectos</b></p>
+      <p class="hint" style="margin:0;"><b>Inicio</b></p>
       <div style="display:flex;align-items:center;gap:8px;">
         <span id="adminStatusBadge" class="admin-badge" style="display:none;">Admin ✓</span>
         <button id="btnAdminToggle" style="padding:6px 12px;font-size:12px;">🔐 Admin</button>
@@ -373,9 +408,31 @@
 
     <div class="edit-row" style="border-top:1px solid var(--border-panel);padding-top:10px;margin-bottom:10px;">
       <button id="btnNewProject" style="flex:1;">➕ Nuevo proyecto</button>
-      <button id="btnExportJson" style="flex:1;">📤 Exportar JSON</button>
       <button id="btnImportJsonTrigger" style="flex:1;">📥 Importar JSON</button>
       <input type="file" id="fileImportInput" accept="application/json" style="display:none;">
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="projectsModal" style="display:none;">
+  <div class="modal-box projects-panel">
+    <div class="admin-header">
+      <p class="hint" style="margin:0;"><b>Proyectos</b></p>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="adminStatusBadge2" class="admin-badge" style="display:none;">Admin ✓</span>
+        <button id="btnAdminToggle2" style="padding:6px 12px;font-size:12px;">🔐 Admin</button>
+      </div>
+    </div>
+
+    <div id="cloudStatus2" class="cloud-status">Verificando conexión con Supabase…</div>
+
+    <p class="hint" style="margin:10px 0 6px;"><b>Guardados en la nube:</b></p>
+    <div id="cloudProjectsList2" style="max-height:250px;overflow-y:auto;margin-bottom:10px;"></div>
+
+    <div class="edit-row" style="border-top:1px solid var(--border-panel);padding-top:10px;margin-bottom:10px;">
+      <button id="btnNewProject2" style="flex:1;">➕ Nuevo proyecto</button>
+      <button id="btnImportJsonTrigger2" style="flex:1;">📥 Importar JSON</button>
+      <input type="file" id="fileImportInput2" accept="application/json" style="display:none;">
     </div>
 
     <div class="modal-actions" style="margin-top:14px;">
@@ -1237,7 +1294,9 @@
 
   // ================= MOTOR GENÉRICO DE TRIPS (matriz causa → efecto) =================
   let pending=[];
-  let TRANSITION_MS = 1000; // tiempo naranja→rojo en los caños, editable desde el input de arriba
+  let TRANSITION_MS = 5000; // tiempo naranja→rojo en los caños, editable desde el input de arriba
+  let trippedEffects = new Set(); // Registro de efectos que fueron tripeados (no manualmente)
+
   document.getElementById('transitionInput').addEventListener('input', e=>{
     const v = parseFloat(e.target.value);
     if(!isNaN(v) && v>0) TRANSITION_MS = v*1000;
@@ -1285,6 +1344,10 @@
   function tripEfecto(efectoId, visited){
     const eq = getEquipo(efectoId);
     if(!eq) return;
+
+    // Marcar como tripeado (no manual)
+    trippedEffects.add(efectoId);
+
     if(eq.tipo==='valvula'){
       // Según el modo de falla: falla-cierra (normal abierta) trippea a cerrada;
       // falla-abre (normal cerrada) trippea a abierta.
@@ -1308,7 +1371,10 @@
     visited = visited || new Set();
     const row = state.trips[causaId];
     if(!row) return;
-    Object.keys(row).forEach(efId=>{ if(row[efId]) tripEfecto(efId, visited); });
+    Object.keys(row).forEach(efId=>{
+      // Solo tripear si el valor es true (trip automático), no 'manual'
+      if(row[efId] === true) tripEfecto(efId, visited);
+    });
   }
 
   // Punto único para activar/desactivar cualquier causa (esté o no vinculada a un
@@ -1338,6 +1404,32 @@
     state.canios.filter(p=>p.from===efectoId||p.to===efectoId).forEach(p=> setPipeState(p.id,'flow'));
   }
 
+  function canManuallyRestore(efectoId){
+    // Verificar si el efecto puede ser repuesto manualmente
+    // 1. Si nunca fue tripeado, se puede operar libremente
+    if(!trippedEffects.has(efectoId)) return true;
+
+    // 2. Si fue tripeado, verificar si tiene permiso manual (1) en la matriz
+    let hasManualPermission = false;
+    state.causas.forEach(causa => {
+      if(state.trips[causa.id] && state.trips[causa.id][efectoId] === 'manual'){
+        hasManualPermission = true;
+      }
+    });
+
+    if(hasManualPermission) return true;
+
+    // 3. Si no tiene permiso manual, verificar que no haya causas activas
+    let hasActiveCauses = false;
+    state.causas.forEach(causa => {
+      if(causa.active && state.trips[causa.id] && state.trips[causa.id][efectoId] === true){
+        hasActiveCauses = true;
+      }
+    });
+
+    return !hasActiveCauses;
+  }
+
   function handleSimClick(eq){
     // No permitir simulación en modo edición
     if(editMode) return;
@@ -1352,11 +1444,22 @@
       // balance de caudal: el click sobre ellos no dispara nada por sí solo.
       return;
     }
+
     // Efecto: forzado manual (abrir/cerrar, arrancar/parar) fuera de la matriz.
+    // Verificar si está en posición de falla y si puede ser repuesto
+    const isInFailPosition = (eq.tipo==='valvula' && ((eq.failMode==='abre' && eq.state.estado==='open') || (eq.failMode==='cierra' && eq.state.estado==='closed'))) ||
+                             ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && !eq.state.run);
+
+    if(isInFailPosition && !canManuallyRestore(eq.id)){
+      log('No se puede reponer '+labelOf(eq.id)+': falta permiso manual (1) en la matriz o hay causas activas.','info');
+      return;
+    }
+
     if(eq.tipo==='valvula'){
       const closing = eq.state.estado==='open';
       setValveState(eq.id, closing?'closed':'open');
       log('Forzado manual: '+labelOf(eq.id)+(closing?' cerrada.':' abierta.'),'cause');
+      if(!closing) trippedEffects.delete(eq.id); // Si se abre/arranca, ya no está tripeado
       if(TYPE_DEFS[eq.tipo].blocksFlow){
         if(closing) cutEfectoFlow(eq.id);
         else restoreAdjacent(eq.id);
@@ -1365,6 +1468,7 @@
       const stopping = eq.state.run;
       setEquipoRunState(eq.id, !stopping);
       log('Forzado manual: '+labelOf(eq.id)+(stopping?(eq.tipo==='horno'?' apagado.':' detenida.'):(eq.tipo==='horno'?' encendido.':' en marcha.')),'cause');
+      if(!stopping) trippedEffects.delete(eq.id); // Si se arranca, ya no está tripeado
       // El horno no corta ni restablece caudal en los caños vecinos (por definición).
       if(TYPE_DEFS[eq.tipo].blocksFlow){
         if(stopping) cutEfectoFlow(eq.id);
@@ -1377,6 +1481,7 @@
     clearPending();
     Object.keys(levelDriftTimers).forEach(id=>clearTimeout(levelDriftTimers[id]));
     for(const k in levelDriftTimers) delete levelDriftTimers[k];
+    trippedEffects.clear(); // Limpiar registro de efectos tripeados
     state.equipos.forEach(eq=>{
       eq.state = JSON.parse(JSON.stringify(TYPE_DEFS[eq.tipo].defaultState));
       if(eq.tipo==='valvula'){
@@ -1464,13 +1569,39 @@
       efectos.forEach(ef=>{
         const td=document.createElement('td');
         const cell=document.createElement('div'); cell.className='trip-cell';
-        const checked = !!(state.trips[ca.id] && state.trips[ca.id][ef.id]);
-        cell.classList.toggle('checked', checked);
-        cell.title = causaLabel(ca)+' → '+(ef.label||ef.id);
+        const tripValue = state.trips[ca.id] && state.trips[ca.id][ef.id];
+        // tripValue puede ser: undefined/false (vacío), true (trip automático), 'manual' (reposición manual)
+        if(tripValue === true){
+          cell.classList.add('trip');
+        } else if(tripValue === 'manual'){
+          cell.classList.add('manual');
+          cell.textContent = '1';
+        }
+        cell.title = causaLabel(ca)+' → '+(ef.label||ef.id)+'\nClick: Trip → Manual (1) → Vacío';
         cell.addEventListener('click', ()=>{
           state.trips[ca.id] = state.trips[ca.id] || {};
-          state.trips[ca.id][ef.id] = !state.trips[ca.id][ef.id];
-          cell.classList.toggle('checked', state.trips[ca.id][ef.id]);
+          const current = state.trips[ca.id][ef.id];
+
+          // Ciclo: vacío → trip → manual → vacío
+          if(!current || current === false){
+            state.trips[ca.id][ef.id] = true; // Trip
+          } else if(current === true){
+            state.trips[ca.id][ef.id] = 'manual'; // Manual
+          } else {
+            state.trips[ca.id][ef.id] = false; // Vacío
+          }
+
+          // Actualizar visualmente
+          cell.classList.remove('trip', 'manual');
+          cell.textContent = '';
+          const newValue = state.trips[ca.id][ef.id];
+          if(newValue === true){
+            cell.classList.add('trip');
+          } else if(newValue === 'manual'){
+            cell.classList.add('manual');
+            cell.textContent = '1';
+          }
+
           markAsChanged();
         });
         td.appendChild(cell); tr.appendChild(td);
@@ -1483,6 +1614,14 @@
 
   document.getElementById('btnDeleteCausa').addEventListener('click', ()=>{
     if(!selectedCausaId) return;
+    const causa = getCausa(selectedCausaId);
+    if(!causa) return;
+
+    const causaName = causaLabel(causa);
+    if(!confirm('¿Estás seguro que querés eliminar la causa "' + causaName + '"?\n\nSe eliminarán todos los trips asociados a esta causa.')){
+      return;
+    }
+
     state.causas = state.causas.filter(x=>x.id!==selectedCausaId);
     delete state.trips[selectedCausaId];
     selectedCausaId = null;
@@ -1577,8 +1716,36 @@
   }
 
   const matrizOverlay = document.getElementById('matrizOverlay');
-  document.getElementById('btnMatriz').addEventListener('click', ()=>{ renderMatrix(); matrizOverlay.style.display = 'flex'; });
-  document.getElementById('btnBackToDiagram').addEventListener('click', ()=>{ matrizOverlay.style.display = 'none'; });
+  const referencesDiagram = document.getElementById('referencesDiagram');
+  const referencesMatrix = document.getElementById('referencesMatrix');
+  const btnMatriz = document.getElementById('btnMatriz');
+  const btnReset = document.getElementById('btnReset');
+  const btnBackToDiagramTop = document.getElementById('btnBackToDiagramTop');
+
+  function showMatrixView(){
+    renderMatrix();
+    matrizOverlay.style.display = 'flex';
+    referencesDiagram.style.display = 'none';
+    referencesMatrix.style.display = 'block';
+    // Ocultar botones de diagrama, mostrar botón volver
+    btnMatriz.style.display = 'none';
+    btnReset.style.display = 'none';
+    btnBackToDiagramTop.style.display = 'block';
+  }
+
+  function showDiagramView(){
+    matrizOverlay.style.display = 'none';
+    referencesDiagram.style.display = 'block';
+    referencesMatrix.style.display = 'none';
+    // Mostrar botones de diagrama, ocultar botón volver
+    btnMatriz.style.display = 'block';
+    btnReset.style.display = 'block';
+    btnBackToDiagramTop.style.display = 'none';
+  }
+
+  document.getElementById('btnMatriz').addEventListener('click', showMatrixView);
+  document.getElementById('btnBackToDiagramTop').addEventListener('click', showDiagramView);
+
   document.getElementById('btnAddCausa').addEventListener('click', ()=>{
     openTextModal('Nombre de la causa (ej. Pulsador Emergencia PE-01):', '', (label)=>{
       let n=1; while(getCausa('causa_'+n)) n++;
@@ -1631,7 +1798,8 @@
   }
   function updateSaveButton(){
     const btn = document.getElementById('btnGuardar');
-    btn.innerHTML = hasUnsavedChanges ? '💾 Guardar <span style="color:var(--orange);font-size:16px;">●</span>' : '💾 Guardar';
+    const html = hasUnsavedChanges ? '💾 Guardar <span style="color:var(--orange);font-size:16px;">●</span>' : '💾 Guardar';
+    btn.innerHTML = html;
   }
 
   function cloudConfigured(){
@@ -1659,8 +1827,20 @@
     currentProjectOwner = projectOwner || null;
     selected = null;
     markAsSaved();
+    updateProjectTitle();
     resetPlant();
     checkProjectPermissions();
+  }
+
+  function updateProjectTitle(){
+    const titleEl = document.getElementById('projectTitle');
+    if(currentProjectName){
+      titleEl.textContent = currentProjectName;
+      titleEl.style.display = 'block';
+    } else {
+      titleEl.textContent = 'Sin título';
+      titleEl.style.display = 'block';
+    }
   }
 
   async function checkProjectPermissions(){
@@ -1728,9 +1908,10 @@
   }
 
 
-  async function refreshCloudStatusAndList(){
-    const statusEl = document.getElementById('cloudStatus');
-    const listEl = document.getElementById('cloudProjectsList');
+  async function refreshCloudStatusAndList(isProjectsModal){
+    // Si isProjectsModal es true, usa los elementos del modal de proyectos, sino usa los de inicio
+    const statusEl = document.getElementById(isProjectsModal ? 'cloudStatus2' : 'cloudStatus');
+    const listEl = document.getElementById(isProjectsModal ? 'cloudProjectsList2' : 'cloudProjectsList');
     if(!cloudConfigured()){
       statusEl.textContent = 'Supabase no está configurado todavía (completá SUPABASE_URL / SUPABASE_ANON_KEY en el HTML).';
       statusEl.className = 'cloud-status err';
@@ -1778,6 +1959,7 @@
           const { data:full, error:err2 } = await sb.from('projects').select('data,name,readonly,owner').eq('id',proj.id).single();
           if(err2){ alert('No se pudo abrir: '+err2.message); return; }
           loadStateIntoApp(full.data, proj.id, full.name, full.owner);
+          document.getElementById('inicioModal').style.display='none';
           document.getElementById('projectsModal').style.display='none';
         });
 
@@ -1792,7 +1974,7 @@
             const newReadonly = !proj.readonly;
             const { error:err } = await sb.from('projects').update({readonly: newReadonly}).eq('id',proj.id);
             if(err){ alert('Error al cambiar permisos: '+err.message); return; }
-            refreshCloudStatusAndList();
+            refreshCloudStatusAndList(isProjectsModal);
           });
           row.appendChild(nameContainer);
           row.appendChild(date);
@@ -1814,7 +1996,7 @@
             const { error:err3 } = await sb.from('projects').delete().eq('id',proj.id);
             if(err3){ alert('No se pudo borrar: '+err3.message); return; }
             if(currentProjectId===proj.id){ currentProjectId=null; currentProjectOwner=null; }
-            refreshCloudStatusAndList();
+            refreshCloudStatusAndList(isProjectsModal);
           });
           row.appendChild(delBtn);
         }
@@ -1826,35 +2008,58 @@
 
   document.getElementById('btnProyectos').addEventListener('click', ()=>{
     document.getElementById('projectsModal').style.display = 'flex';
-    refreshCloudStatusAndList();
+    refreshCloudStatusAndList(true);
+    syncAdminStatus();
   });
   document.getElementById('btnCloseProjects').addEventListener('click', ()=>{
     document.getElementById('projectsModal').style.display = 'none';
   });
 
-  document.getElementById('btnAdminToggle').addEventListener('click', ()=>{
-    if(isAdminMode){
-      // Salir de modo admin
-      isAdminMode = false;
-      document.getElementById('btnAdminToggle').textContent = '🔐 Admin';
-      document.getElementById('btnAdminToggle').classList.remove('primary');
-      document.getElementById('adminStatusBadge').style.display = 'none';
-      refreshCloudStatusAndList();
-    } else {
-      // Entrar a modo admin
-      openTextModal('Contraseña de administrador:', '', (password)=>{
-        if(password === ADMIN_PASSWORD){
-          isAdminMode = true;
-          document.getElementById('btnAdminToggle').textContent = '👤 Admin';
-          document.getElementById('btnAdminToggle').classList.add('primary');
-          document.getElementById('adminStatusBadge').style.display = 'block';
-          refreshCloudStatusAndList();
-        } else {
-          alert('Contraseña incorrecta');
-        }
-      });
-    }
-  });
+  function syncAdminStatus(){
+    // Sincronizar el estado de admin en ambos modales
+    const btns = [document.getElementById('btnAdminToggle'), document.getElementById('btnAdminToggle2')];
+    const badges = [document.getElementById('adminStatusBadge'), document.getElementById('adminStatusBadge2')];
+
+    btns.forEach(btn => {
+      if(btn){
+        btn.textContent = isAdminMode ? '👤 Admin' : '🔐 Admin';
+        if(isAdminMode) btn.classList.add('primary');
+        else btn.classList.remove('primary');
+      }
+    });
+
+    badges.forEach(badge => {
+      if(badge) badge.style.display = isAdminMode ? 'block' : 'none';
+    });
+  }
+
+  function setupAdminToggle(btnId, isProjectsModal){
+    const btn = document.getElementById(btnId);
+    if(!btn) return;
+
+    btn.addEventListener('click', ()=>{
+      if(isAdminMode){
+        // Salir de modo admin
+        isAdminMode = false;
+        syncAdminStatus();
+        refreshCloudStatusAndList(isProjectsModal);
+      } else {
+        // Entrar a modo admin
+        openTextModal('Contraseña de administrador:', '', (password)=>{
+          if(password === ADMIN_PASSWORD){
+            isAdminMode = true;
+            syncAdminStatus();
+            refreshCloudStatusAndList(isProjectsModal);
+          } else {
+            alert('Contraseña incorrecta');
+          }
+        });
+      }
+    });
+  }
+
+  setupAdminToggle('btnAdminToggle', false);
+  setupAdminToggle('btnAdminToggle2', true);
 
   document.getElementById('btnGuardar').addEventListener('click', async ()=>{
     const sb = getSupabase();
@@ -1915,74 +2120,149 @@
 
     currentProjectName = name;
     markAsSaved();
+    updateProjectTitle();
     log('Proyecto "'+name+'" guardado en la nube.', 'info');
   }
 
-  document.getElementById('btnNewProject').addEventListener('click', ()=>{
-    const modal = document.getElementById('genericModal');
-    const projectsModal = document.getElementById('projectsModal');
+  function setupNewProjectButton(btnId, modalId){
+    document.getElementById(btnId).addEventListener('click', ()=>{
+      const modal = document.getElementById('genericModal');
 
-    // Posicionar el modal genérico arriba del modal de proyectos
-    modal.style.alignItems = 'flex-start';
-    modal.style.paddingTop = '80px';
+      // Posicionar el modal genérico arriba del modal de proyectos
+      modal.style.alignItems = 'flex-start';
+      modal.style.paddingTop = '80px';
 
-    openTextModal('Nombre del nuevo proyecto:', 'Nuevo proyecto',
-      (nombre)=>{
-        // onConfirm
-        loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, nombre, null);
-        projectsModal.style.display = 'none';
+      openTextModal('Nombre del nuevo proyecto:', 'Nuevo proyecto',
+        (nombre)=>{
+          // onConfirm
+          loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, nombre, null);
+          document.getElementById('inicioModal').style.display = 'none';
+          document.getElementById('projectsModal').style.display = 'none';
 
-        // Restaurar posición del modal genérico
-        modal.style.alignItems = 'center';
-        modal.style.paddingTop = '0';
-      },
-      ()=>{
-        // onCancel - restaurar posición del modal genérico
-        modal.style.alignItems = 'center';
-        modal.style.paddingTop = '0';
-      }
-    );
-  });
+          // Restaurar posición del modal genérico
+          modal.style.alignItems = 'center';
+          modal.style.paddingTop = '0';
+        },
+        ()=>{
+          // onCancel - restaurar posición del modal genérico
+          modal.style.alignItems = 'center';
+          modal.style.paddingTop = '0';
+        }
+      );
+    });
+  }
+
+  setupNewProjectButton('btnNewProject', 'inicioModal');
+  setupNewProjectButton('btnNewProject2', 'projectsModal');
 
 
   // ---- Exportar / Importar como archivo .json local ----
-  document.getElementById('btnExportJson').addEventListener('click', ()=>{
-    openTextModal('Nombre del archivo:', currentProjectName || 'proyecto', (nombre)=>{
-      const json = JSON.stringify({equipos:state.equipos, canios:state.canios, trips:state.trips, causas:state.causas}, null, 2);
-      const blob = new Blob([json], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = nombre.trim().replace(/\.json$/i,'')+'.json';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
+  document.getElementById('btnExportJson').addEventListener('click', async ()=>{
+    const json = JSON.stringify({equipos:state.equipos, canios:state.canios, trips:state.trips, causas:state.causas}, null, 2);
+
+    // Intentar usar File System Access API si está disponible
+    if(window.showSaveFilePicker){
+      try{
+        const defaultName = (currentProjectName || 'proyecto').trim().replace(/\.json$/i,'') + '.json';
+        const handle = await window.showSaveFilePicker({
+          suggestedName: defaultName,
+          types: [{
+            description: 'JSON Files',
+            accept: {'application/json': ['.json']}
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(json);
+        await writable.close();
+        log('Proyecto exportado como ' + defaultName, 'info');
+      } catch(err){
+        if(err.name !== 'AbortError'){
+          console.error('Error al exportar:', err);
+          alert('Error al exportar: ' + err.message);
+        }
+      }
+    } else {
+      // Fallback: usar método tradicional con diálogo para cambiar nombre
+      openTextModal('Nombre del archivo a exportar:', (currentProjectName || 'proyecto').trim().replace(/\.json$/i,''), (nombre)=>{
+        const blob = new Blob([json], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = nombre.trim().replace(/\.json$/i,'') + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        log('Proyecto exportado como ' + nombre + '.json', 'info');
+      });
+    }
   });
   document.getElementById('btnImportJsonTrigger').addEventListener('click', ()=>{
     document.getElementById('fileImportInput').click();
   });
-  document.getElementById('fileImportInput').addEventListener('change', e=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = ()=>{
-      try{
-        const parsed = JSON.parse(reader.result);
-        loadStateIntoApp(parsed, null, file.name.replace(/\.json$/i,''), null);
-        document.getElementById('projectsModal').style.display='none';
-      } catch(err){
-        alert('El archivo no es un proyecto válido.');
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+  document.getElementById('btnImportJsonTrigger2').addEventListener('click', ()=>{
+    document.getElementById('fileImportInput2').click();
   });
+
+  function setupImportHandler(inputId){
+    document.getElementById(inputId).addEventListener('change', async e=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = async ()=>{
+        try{
+          const parsed = JSON.parse(reader.result);
+          const projectName = file.name.replace(/\.json$/i,'');
+
+          // Guardar directamente en Supabase
+          const sb = getSupabase();
+          if(!sb){
+            alert('Supabase no está configurado. El proyecto se cargó localmente pero no se guardó en la nube.');
+            loadStateIntoApp(parsed, null, projectName, null);
+            document.getElementById('inicioModal').style.display='none';
+            document.getElementById('projectsModal').style.display='none';
+            return;
+          }
+
+          const payload = {
+            name: projectName,
+            data: parsed,
+            owner: getUserId(),
+            readonly: false,
+            updated_at: new Date().toISOString()
+          };
+
+          const result = await sb.from('projects').insert(payload).select('id,owner').single();
+
+          if(result.error){
+            alert('Error al guardar en la nube: ' + result.error.message + '\nEl proyecto se cargó localmente.');
+            loadStateIntoApp(parsed, null, projectName, null);
+          } else {
+            // Cargar el proyecto recién guardado
+            loadStateIntoApp(parsed, result.data.id, projectName, result.data.owner);
+            log('Proyecto "' + projectName + '" importado y guardado en la nube.', 'info');
+          }
+
+          document.getElementById('inicioModal').style.display='none';
+          document.getElementById('projectsModal').style.display='none';
+        } catch(err){
+          alert('El archivo no es un proyecto válido: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    });
+  }
+
+  setupImportHandler('fileImportInput');
+  setupImportHandler('fileImportInput2');
 
   resetPlant();
 
-  // Abrir el modal de proyectos al iniciar la app
+  // Abrir el modal de inicio al cargar la app
   window.addEventListener('load', ()=>{
-    document.getElementById('projectsModal').style.display = 'flex';
-    refreshCloudStatusAndList();
+    document.getElementById('inicioModal').style.display = 'flex';
+    refreshCloudStatusAndList(false);
   });
 })();
 </script>
