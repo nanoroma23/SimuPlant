@@ -210,9 +210,13 @@
     background:var(--bg-panel-alt);margin-bottom:6px;}
   .project-row .pname{flex:1;font-size:13px;color:var(--text-light);}
   .project-row .pdate{font-size:11px;color:var(--text-dim-light);}
+  .project-row .readonly-badge{font-size:10px;color:var(--orange);font-weight:700;padding:2px 6px;
+    background:rgba(255,157,59,.2);border-radius:4px;}
   .cloud-status{font-size:11.5px;color:var(--text-dim-light);margin:6px 0;}
   .cloud-status.ok{color:var(--green);}
   .cloud-status.err{color:var(--red);}
+  .admin-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .admin-badge{font-size:11px;color:var(--green);font-weight:700;}
 </style>
 </head>
 <body>
@@ -220,9 +224,45 @@
   ============================================================================
   CONFIGURACIÓN DE SUPABASE — completar antes de publicar en GitHub Pages.
   1) Creá un proyecto en https://supabase.com
-  2) Corré el SQL de la tabla "projects" que te dieron en el chat (Table Editor > SQL).
+  2) Corré el SQL de la tabla "projects" en Table Editor > SQL Editor:
+
+  CREATE TABLE projects (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    data JSONB NOT NULL,
+    owner TEXT,
+    readonly BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+
+  -- Habilitar Row Level Security
+  ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+
+  -- Política: todos pueden leer
+  CREATE POLICY "Todos pueden leer proyectos"
+    ON projects FOR SELECT
+    USING (true);
+
+  -- Política: todos pueden insertar
+  CREATE POLICY "Todos pueden crear proyectos"
+    ON projects FOR INSERT
+    WITH CHECK (true);
+
+  -- Política: todos pueden actualizar (la app verifica permisos)
+  CREATE POLICY "Todos pueden actualizar proyectos"
+    ON projects FOR UPDATE
+    USING (true);
+
+  -- Política: todos pueden eliminar (la app verifica permisos)
+  CREATE POLICY "Todos pueden eliminar proyectos"
+    ON projects FOR DELETE
+    USING (true);
+
   3) Project Settings > API: copiá "Project URL" y "anon public key" y pegalos abajo.
   La anon key está pensada para exponerse en el cliente; la seguridad la da RLS.
+
+  4) Contraseña de admin por defecto: admin123 (cambiarla en la línea ~1606)
   ============================================================================
 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -236,6 +276,7 @@
       <button id="btnProyectos" title="Proyectos guardados">📁 Proyectos</button>
       <button id="btnGuardar" class="btn-fixed-width" title="Guardar proyecto en Supabase">💾 Guardar</button>
       <button id="btnEditMode" class="btn-fixed-width" title="Modo edición">✏️ Editar</button>
+      <span id="readonlyIndicator" style="display:none;background:var(--bg-panel-alt);border:1px solid var(--border-panel);padding:9px 14px;border-radius:6px;font-size:13px;color:var(--orange);box-shadow:0 2px 6px rgba(0,0,0,.35);">🔒 Solo lectura</span>
     </div>
     <div class="float-controls-right">
       <div class="transition-control" title="Tiempo de transición naranja → rojo en los caños">
@@ -317,7 +358,13 @@
 
 <div class="modal-overlay" id="projectsModal" style="display:none;">
   <div class="modal-box projects-panel">
-    <p class="hint" style="margin:0 0 10px 0;"><b>Proyectos</b></p>
+    <div class="admin-header">
+      <p class="hint" style="margin:0;"><b>Proyectos</b></p>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="adminStatusBadge" class="admin-badge" style="display:none;">Admin ✓</span>
+        <button id="btnAdminToggle" style="padding:6px 12px;font-size:12px;">🔐 Admin</button>
+      </div>
+    </div>
 
     <div id="cloudStatus" class="cloud-status">Verificando conexión con Supabase…</div>
 
@@ -1569,7 +1616,10 @@
   let supabaseClient = null;
   let currentProjectId = null;
   let currentProjectName = '';
+  let currentProjectOwner = null;
   let hasUnsavedChanges = false;
+  let isAdminMode = false;
+  const ADMIN_PASSWORD = 'admin123'; // Contraseña de administrador
 
   function markAsChanged(){
     hasUnsavedChanges = true;
@@ -1596,7 +1646,7 @@
   }
 
   // Reemplaza el estado actual por uno cargado (nube o archivo) y refresca todo.
-  function loadStateIntoApp(newState, projectId, projectName){
+  function loadStateIntoApp(newState, projectId, projectName, projectOwner){
     clearPending();
     Object.keys(levelDriftTimers).forEach(id=>clearTimeout(levelDriftTimers[id]));
     for(const k in levelDriftTimers) delete levelDriftTimers[k];
@@ -1606,9 +1656,75 @@
     state.causas = newState.causas || [];
     currentProjectId = projectId || null;
     currentProjectName = projectName || '';
+    currentProjectOwner = projectOwner || null;
     selected = null;
     markAsSaved();
     resetPlant();
+    checkProjectPermissions();
+  }
+
+  async function checkProjectPermissions(){
+    // Si el proyecto es de solo lectura y el usuario no es admin ni el dueño, deshabilitar edición
+    const readonlyIndicator = document.getElementById('readonlyIndicator');
+
+    if(!currentProjectId){
+      readonlyIndicator.style.display = 'none';
+      return;
+    }
+
+    const sb = getSupabase();
+    if(!sb){
+      readonlyIndicator.style.display = 'none';
+      return;
+    }
+
+    const { data:proj, error } = await sb.from('projects').select('readonly,owner').eq('id',currentProjectId).single();
+    if(error){
+      readonlyIndicator.style.display = 'none';
+      return;
+    }
+
+    const canEdit = isAdminMode || !proj.readonly || proj.owner === getUserId();
+
+    // Deshabilitar botones de edición si no tiene permisos
+    const btnEdit = document.getElementById('btnEditMode');
+    const btnSave = document.getElementById('btnGuardar');
+
+    if(!canEdit){
+      if(editMode){
+        // Salir del modo edición si estaba activo
+        btnEdit.click();
+      }
+      btnEdit.disabled = true;
+      btnEdit.title = 'Proyecto en modo solo lectura';
+      btnSave.disabled = true;
+      btnSave.title = 'No tenés permisos para guardar cambios';
+      readonlyIndicator.style.display = 'block';
+      log('Proyecto abierto en modo solo lectura.', 'info');
+    } else {
+      btnEdit.disabled = false;
+      btnEdit.title = 'Modo edición';
+      btnSave.disabled = false;
+      btnSave.title = 'Guardar proyecto en Supabase';
+      readonlyIndicator.style.display = 'none';
+    }
+  }
+
+  function canEditProject(project){
+    if(isAdminMode) return true;
+    if(!project.readonly) return true;
+    if(project.owner === getUserId()) return true;
+    return false;
+  }
+
+  function getUserId(){
+    // Generar un ID único por navegador/dispositivo
+    let userId = localStorage.getItem('pfd_user_id');
+    if(!userId){
+      userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('pfd_user_id', userId);
+    }
+    return userId;
   }
 
 
@@ -1622,7 +1738,7 @@
       return;
     }
     const sb = getSupabase();
-    const { data, error } = await sb.from('projects').select('id,name,updated_at').order('updated_at',{ascending:false});
+    const { data, error } = await sb.from('projects').select('id,name,updated_at,readonly,owner').order('updated_at',{ascending:false});
     if(error){
       statusEl.textContent = 'Error conectando a Supabase: '+error.message;
       statusEl.className = 'cloud-status err';
@@ -1637,24 +1753,72 @@
     } else {
       data.forEach(proj=>{
         const row = document.createElement('div'); row.className='project-row';
+
+        const nameContainer = document.createElement('div');
+        nameContainer.style.flex = '1';
+        nameContainer.style.display = 'flex';
+        nameContainer.style.flexDirection = 'column';
+        nameContainer.style.gap = '4px';
+
         const name = document.createElement('span'); name.className='pname'; name.textContent = proj.name;
+        nameContainer.appendChild(name);
+
+        if(proj.readonly){
+          const badge = document.createElement('span');
+          badge.className = 'readonly-badge';
+          badge.textContent = '🔒 Solo lectura';
+          nameContainer.appendChild(badge);
+        }
+
         const date = document.createElement('span'); date.className='pdate';
         date.textContent = new Date(proj.updated_at).toLocaleString();
+
         const openBtn = document.createElement('button'); openBtn.textContent='Abrir';
         openBtn.addEventListener('click', async ()=>{
-          const { data:full, error:err2 } = await sb.from('projects').select('data,name').eq('id',proj.id).single();
+          const { data:full, error:err2 } = await sb.from('projects').select('data,name,readonly,owner').eq('id',proj.id).single();
           if(err2){ alert('No se pudo abrir: '+err2.message); return; }
-          loadStateIntoApp(full.data, proj.id, full.name);
+          loadStateIntoApp(full.data, proj.id, full.name, full.owner);
           document.getElementById('projectsModal').style.display='none';
         });
-        const delBtn = document.createElement('button'); delBtn.className='danger'; delBtn.textContent='🗑';
-        delBtn.addEventListener('click', async ()=>{
-          const { error:err3 } = await sb.from('projects').delete().eq('id',proj.id);
-          if(err3){ alert('No se pudo borrar: '+err3.message); return; }
-          if(currentProjectId===proj.id){ currentProjectId=null; updateCurrentProjectHint(); }
-          refreshCloudStatusAndList();
-        });
-        row.appendChild(name); row.appendChild(date); row.appendChild(openBtn); row.appendChild(delBtn);
+
+        // Botón de toggle solo lectura (solo admin)
+        if(isAdminMode){
+          const readonlyBtn = document.createElement('button');
+          readonlyBtn.textContent = proj.readonly ? '🔓' : '🔒';
+          readonlyBtn.title = proj.readonly ? 'Permitir edición' : 'Solo lectura';
+          readonlyBtn.style.padding = '6px 10px';
+          readonlyBtn.addEventListener('click', async (e)=>{
+            e.stopPropagation();
+            const newReadonly = !proj.readonly;
+            const { error:err } = await sb.from('projects').update({readonly: newReadonly}).eq('id',proj.id);
+            if(err){ alert('Error al cambiar permisos: '+err.message); return; }
+            refreshCloudStatusAndList();
+          });
+          row.appendChild(nameContainer);
+          row.appendChild(date);
+          row.appendChild(readonlyBtn);
+          row.appendChild(openBtn);
+        } else {
+          row.appendChild(nameContainer);
+          row.appendChild(date);
+          row.appendChild(openBtn);
+        }
+
+        // Botón eliminar solo para admin
+        if(isAdminMode){
+          const delBtn = document.createElement('button'); delBtn.className='danger'; delBtn.textContent='🗑';
+          delBtn.addEventListener('click', async ()=>{
+            if(!confirm('¿Estás seguro que querés eliminar el proyecto "'+proj.name+'"?\n\nEsta acción no se puede deshacer.')){
+              return;
+            }
+            const { error:err3 } = await sb.from('projects').delete().eq('id',proj.id);
+            if(err3){ alert('No se pudo borrar: '+err3.message); return; }
+            if(currentProjectId===proj.id){ currentProjectId=null; currentProjectOwner=null; }
+            refreshCloudStatusAndList();
+          });
+          row.appendChild(delBtn);
+        }
+
         listEl.appendChild(row);
       });
     }
@@ -1668,9 +1832,43 @@
     document.getElementById('projectsModal').style.display = 'none';
   });
 
+  document.getElementById('btnAdminToggle').addEventListener('click', ()=>{
+    if(isAdminMode){
+      // Salir de modo admin
+      isAdminMode = false;
+      document.getElementById('btnAdminToggle').textContent = '🔐 Admin';
+      document.getElementById('btnAdminToggle').classList.remove('primary');
+      document.getElementById('adminStatusBadge').style.display = 'none';
+      refreshCloudStatusAndList();
+    } else {
+      // Entrar a modo admin
+      openTextModal('Contraseña de administrador:', '', (password)=>{
+        if(password === ADMIN_PASSWORD){
+          isAdminMode = true;
+          document.getElementById('btnAdminToggle').textContent = '👤 Admin';
+          document.getElementById('btnAdminToggle').classList.add('primary');
+          document.getElementById('adminStatusBadge').style.display = 'block';
+          refreshCloudStatusAndList();
+        } else {
+          alert('Contraseña incorrecta');
+        }
+      });
+    }
+  });
+
   document.getElementById('btnGuardar').addEventListener('click', async ()=>{
     const sb = getSupabase();
     if(!sb){ alert('Supabase no está configurado todavía.'); return; }
+
+    // Verificar permisos antes de guardar
+    if(currentProjectId){
+      const { data:proj, error } = await sb.from('projects').select('readonly,owner').eq('id',currentProjectId).single();
+      if(error){ alert('Error al verificar permisos: '+error.message); return; }
+      if(proj.readonly && !isAdminMode && proj.owner !== getUserId()){
+        alert('Este proyecto está en modo solo lectura. No podés guardar cambios.');
+        return;
+      }
+    }
 
     if(!currentProjectName){
       // Si no tiene nombre, pedir uno
@@ -1700,8 +1898,14 @@
     if(currentProjectId){
       result = await sb.from('projects').update(payload).eq('id', currentProjectId);
     } else {
-      result = await sb.from('projects').insert(payload).select('id').single();
-      if(!result.error) currentProjectId = result.data.id;
+      // Nuevo proyecto: establecer el owner
+      payload.owner = getUserId();
+      payload.readonly = false;
+      result = await sb.from('projects').insert(payload).select('id,owner').single();
+      if(!result.error){
+        currentProjectId = result.data.id;
+        currentProjectOwner = result.data.owner;
+      }
     }
 
     if(result.error){
@@ -1725,7 +1929,7 @@
     openTextModal('Nombre del nuevo proyecto:', 'Nuevo proyecto',
       (nombre)=>{
         // onConfirm
-        loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, nombre);
+        loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, nombre, null);
         projectsModal.style.display = 'none';
 
         // Restaurar posición del modal genérico
@@ -1763,7 +1967,7 @@
     reader.onload = ()=>{
       try{
         const parsed = JSON.parse(reader.result);
-        loadStateIntoApp(parsed, null, file.name.replace(/\.json$/i,''));
+        loadStateIntoApp(parsed, null, file.name.replace(/\.json$/i,''), null);
         document.getElementById('projectsModal').style.display='none';
       } catch(err){
         alert('El archivo no es un proyecto válido.');
