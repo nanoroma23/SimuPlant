@@ -34,24 +34,24 @@
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;padding:0;background:var(--bg-app);color:var(--text-light);
     font-family:'Segoe UI',Helvetica,Arial,sans-serif;overflow:hidden;}
-  .app{display:grid;grid-template-columns:1fr 340px;grid-template-rows:60px 1fr;height:100vh;width:100vw;overflow:hidden;}
+  .app{display:grid;grid-template-columns:1fr 340px;grid-template-rows:48px 1fr;height:100vh;width:100vw;overflow:hidden;}
   .topbar{grid-column:1;grid-row:1;background:var(--bg-panel);border-bottom:1px solid var(--border-panel);
-    padding:10px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 6px rgba(0,0,0,.35);z-index:100;height:60px;}
+    padding:8px 14px;display:flex;align-items:center;gap:10px;box-shadow:0 2px 6px rgba(0,0,0,.35);z-index:100;height:48px;}
   .topbar-left{display:flex;gap:6px;align-items:center;}
   .topbar-right{display:flex;gap:6px;align-items:center;}
   .topbar-center{flex:1;display:flex;justify-content:center;align-items:center;}
-  .project-title-display{font-size:16px;font-weight:600;color:var(--text-light);letter-spacing:0.3px;}
+  .project-title-display{font-size:15px;font-weight:600;color:var(--text-light);letter-spacing:0.3px;}
   .stage{grid-column:1;grid-row:2;position:relative;padding:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
   aside{grid-column:2;grid-row:1 / -1;width:340px;}
   button{background:var(--bg-panel-alt);border:1px solid var(--border-panel);color:var(--text-light);
-    padding:9px 14px;border-radius:6px;font-size:13px;cursor:pointer;transition:background .15s,border-color .15s;
+    padding:7px 12px;border-radius:5px;font-size:12.5px;cursor:pointer;transition:background .15s,border-color .15s;
     box-shadow:0 2px 6px rgba(0,0,0,.35);}
   button:hover{background:var(--gray-4);border-color:var(--gray-4);}
   button.primary{border-color:var(--gray-4);background:var(--gray-4);}
   button.danger{border-color:#8a4a4a;}
   button.danger:hover{background:#5a2e2e;}
   button:disabled{opacity:.35;cursor:not-allowed;}
-  .btn-fixed-width{min-width:100px;}
+  .btn-fixed-width{min-width:90px;}
   .sep{width:1px;align-self:stretch;background:var(--border-panel);margin:0 2px;}
 
   .diagram-wrap{position:relative;background:var(--bg-diagram);flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden;cursor:grab;}
@@ -136,6 +136,7 @@
     transition:background .15s,border-color .15s;}
   .type-card:hover{background:var(--gray-4);border-color:var(--gray-4);}
   .type-card svg{width:100%;height:42px;}
+  .type-card.small-icon svg{height:36px;}
   .type-card span{font-size:9.5px;color:var(--text-light);text-align:center;line-height:1.2;}
   .icon-preview text,.icon-preview .selection-highlight{display:none;}
 
@@ -148,7 +149,7 @@
   .log-list::-webkit-scrollbar-track{background:var(--bg-panel);border-radius:4px;}
   .log-list::-webkit-scrollbar-thumb{background:var(--bg-panel-alt);border-radius:4px;}
   .log-list::-webkit-scrollbar-thumb:hover{background:var(--gray-4);}
-  .log-entry{font-family:var(--mono);font-size:11.5px;line-height:1.4;padding:6px 8px;border-radius:5px;
+  .log-entry{font-family:var(--mono);font-size:12.5px;line-height:1.5;padding:7px 9px;border-radius:5px;
     background:var(--bg-app);border-left:3px solid var(--pipe-idle);flex:none;}
   .log-entry.cause{border-left-color:var(--red);color:#ffb3b3;}
   .log-entry.effect{border-left-color:var(--orange);color:#ffd6ac;}
@@ -529,25 +530,46 @@
         b.textContent = nivelBadgeText(nivel);
         el('rect',{class:'selection-highlight',x:-5,y:-5,width:120,height:56,rx:10},g);
       }},
-    transmisor: { name:'Transmisor', category:'causa', w:30, h:30, defaultState:{ok:true},
+    acumulador: { name:'Acumulador', category:'causa', w:130, h:76, defaultState:{nivel:'normal',nivelBota:'normal'},
       render(g,eq){
-        const ok = eq.state.ok;
-        el('circle',{id:eq.id+'-circle',class:'fm-circle '+(ok?'ok':'low'),cx:15,cy:15,r:15},g);
-        el('text',{x:15,y:19,'text-anchor':'middle',class:'fm-text'},g).textContent = 'T';
-        el('text',{id:eq.id+'-label',x:15,y:-4,'text-anchor':'middle',class:'equip-sub','font-size':9},g).textContent = eq.label;
-        const b = el('text',{id:eq.id+'-badge',class:'fm-badge '+(ok?'ok':'low'),x:15,y:40,'text-anchor':'middle','font-size':9.5},g);
-        b.textContent = ok?'NORMAL':'ALARMA';
-        el('rect',{class:'selection-highlight',x:-5,y:-5,width:40,height:40,rx:20},g);
+        el('text',{id:eq.id+'-label',x:65,y:-8,'text-anchor':'middle',class:'equip-label'},g).textContent = eq.label||eq.id;
+        // Cuerpo principal (horizontal, como separador)
+        el('rect',{class:'tank-level-bg',x:0,y:0,width:110,height:46,rx:22},g);
+        const clipId = eq.id+'-clip';
+        const clip = el('clipPath',{id:clipId},g);
+        el('rect',{x:0,y:0,width:110,height:46,rx:22},clip);
+        const nivel = eq.state.nivel;
+        const lg = levelGeom(46, nivel);
+        el('rect',{id:eq.id+'-level',class:'tank-level-fill '+nivel,x:0,width:110,
+          'clip-path':'url(#'+clipId+')', y: lg.y, height: lg.height},g);
+        el('rect',{class:'equip-outline',x:0,y:0,width:110,height:46,rx:22},g);
+        // Bota hacia abajo (solo contorno, mitad inferior del óvalo)
+        el('line',{class:'equip-outline',x1:65,y1:46,x2:65,y2:60},g);
+        el('line',{class:'equip-outline',x1:90,y1:46,x2:90,y2:60},g);
+        el('path',{class:'equip-outline',fill:'none',d:'M65,60 A12.5,8 0 0,0 90,60'},g);
+        const b = el('text',{id:eq.id+'-badge',class:'tank-badge '+nivel,x:55,y:27,'text-anchor':'middle'},g);
+        b.textContent = nivelBadgeText(nivel);
+        el('rect',{class:'selection-highlight',x:-5,y:-5,width:140,height:86,rx:10},g);
       }},
-    transmisor_flujo: { name:'Transmisor FT', category:'causa', w:30, h:30, defaultState:{ok:true},
+    transmisor: { name:'Transmisor', category:'causa', w:35, h:35, defaultState:{ok:true},
       render(g,eq){
         const ok = eq.state.ok;
-        el('circle',{id:eq.id+'-circle',class:'fm-circle '+(ok?'ok':'low'),cx:15,cy:15,r:15},g);
-        el('text',{x:15,y:19,'text-anchor':'middle',class:'fm-text','font-size':8.5},g).textContent = 'FT';
-        el('text',{id:eq.id+'-label',x:15,y:-4,'text-anchor':'middle',class:'equip-sub','font-size':9},g).textContent = eq.label;
-        const b = el('text',{id:eq.id+'-badge',class:'fm-badge '+(ok?'ok':'low'),x:15,y:40,'text-anchor':'middle','font-size':9.5},g);
+        el('circle',{id:eq.id+'-circle',class:'fm-circle '+(ok?'ok':'low'),cx:17.5,cy:17.5,r:17.5},g);
+        el('text',{x:17.5,y:22,'text-anchor':'middle',class:'fm-text'},g).textContent = 'T';
+        el('text',{id:eq.id+'-label',x:17.5,y:-4,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label;
+        const b = el('text',{id:eq.id+'-badge',class:'fm-badge '+(ok?'ok':'low'),x:17.5,y:45,'text-anchor':'middle','font-size':9.5},g);
         b.textContent = ok?'NORMAL':'ALARMA';
-        el('rect',{class:'selection-highlight',x:-5,y:-5,width:40,height:40,rx:20},g);
+        el('rect',{class:'selection-highlight',x:-5,y:-5,width:45,height:45,rx:22},g);
+      }},
+    transmisor_flujo: { name:'Transmisor FT', category:'causa', w:35, h:35, defaultState:{ok:true},
+      render(g,eq){
+        const ok = eq.state.ok;
+        el('circle',{id:eq.id+'-circle',class:'fm-circle '+(ok?'ok':'low'),cx:17.5,cy:17.5,r:17.5},g);
+        el('text',{x:17.5,y:22,'text-anchor':'middle',class:'fm-text','font-size':9},g).textContent = 'FT';
+        el('text',{id:eq.id+'-label',x:17.5,y:-4,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label;
+        const b = el('text',{id:eq.id+'-badge',class:'fm-badge '+(ok?'ok':'low'),x:17.5,y:45,'text-anchor':'middle','font-size':9.5},g);
+        b.textContent = ok?'NORMAL':'ALARMA';
+        el('rect',{class:'selection-highlight',x:-5,y:-5,width:45,height:45,rx:22},g);
       }},
     valvula: { name:'Válvula', category:'efecto', w:32, h:28, blocksFlow:true, defaultState:{estado:'open'},
       render(g,eq){
@@ -606,6 +628,12 @@
   // ================= RUTEO DE CAÑOS =================
   function portPoint(eq, port){
     const t = TYPE_DEFS[eq.tipo], w=t.w*EQUIP_SCALE, h=t.h*EQUIP_SCALE;
+    // Acumulador: ajustes especiales para sus puertos
+    if(eq.tipo==='acumulador'){
+      if(port==='bottom') return {x:eq.x+(77.5*EQUIP_SCALE), y:eq.y+h}; // punta de la bota
+      if(port==='right') return {x:eq.x+(110*EQUIP_SCALE), y:eq.y+h/2}; // borde del cuerpo principal
+      if(port==='top') return {x:eq.x+(55*EQUIP_SCALE), y:eq.y}; // centro del cuerpo principal
+    }
     switch(port){
       case 'left': return {x:eq.x, y:eq.y+h/2};
       case 'right': return {x:eq.x+w, y:eq.y+h/2};
@@ -752,15 +780,33 @@
       if(!eq){ selected=null; p.innerHTML=''; return; }
       const isInstrument = eq.tipo==='transmisor' || eq.tipo==='transmisor_flujo';
       const isVesselCausa = TYPE_DEFS[eq.tipo].category==='causa' && !isInstrument && ('nivel' in eq.state);
+      const isAcumulador = eq.tipo==='acumulador';
       let linkBtnHtml = '';
       if(isVesselCausa){
-        const causaBajo = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='bajo');
-        const causaAlto = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='alto');
-        linkBtnHtml = `<p class="hint" style="margin:6px 0 4px;">Trip por nivel (vos elegís):</p>
-          <div class="edit-row">
-            <button id="btnLinkBajo" style="flex:1;">${causaBajo?'✖ Bajo nivel':'+ Bajo nivel'}</button>
-            <button id="btnLinkAlto" style="flex:1;">${causaAlto?'✖ Alto nivel':'+ Alto nivel'}</button>
-          </div>`;
+        if(isAcumulador){
+          const causaBajo = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='bajo');
+          const causaAlto = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='alto');
+          const causaBajoBota = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='bajoBota');
+          const causaAltoBota = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='altoBota');
+          linkBtnHtml = `<p class="hint" style="margin:6px 0 4px;">Trip por nivel (vos elegís):</p>
+            <div class="edit-row">
+              <button id="btnLinkBajo" style="flex:1;">${causaBajo?'✖ Bajo':'+ Bajo'}</button>
+              <button id="btnLinkAlto" style="flex:1;">${causaAlto?'✖ Alto':'+ Alto'}</button>
+            </div>
+            <p class="hint" style="margin:6px 0 4px;">Trip por nivel de bota:</p>
+            <div class="edit-row">
+              <button id="btnLinkBajoBota" style="flex:1;">${causaBajoBota?'✖ Bajo bota':'+ Bajo bota'}</button>
+              <button id="btnLinkAltoBota" style="flex:1;">${causaAltoBota?'✖ Alto bota':'+ Alto bota'}</button>
+            </div>`;
+        } else {
+          const causaBajo = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='bajo');
+          const causaAlto = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='alto');
+          linkBtnHtml = `<p class="hint" style="margin:6px 0 4px;">Trip por nivel (vos elegís):</p>
+            <div class="edit-row">
+              <button id="btnLinkBajo" style="flex:1;">${causaBajo?'✖ Bajo nivel':'+ Bajo nivel'}</button>
+              <button id="btnLinkAlto" style="flex:1;">${causaAlto?'✖ Alto nivel':'+ Alto nivel'}</button>
+            </div>`;
+        }
       }
       let failModeHtml = '';
       if(eq.tipo==='valvula'){
@@ -821,6 +867,22 @@
           markAsChanged();
           renderMatrix(); renderCausaButtons(); updateSelectionUI();
         });
+        if(isAcumulador){
+          document.getElementById('btnLinkBajoBota').addEventListener('click', ()=>{
+            const existing = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='bajoBota');
+            if(existing){ state.causas = state.causas.filter(c=>c!==existing); delete state.trips[existing.id]; }
+            else state.causas.push({id:eq.id+'_bajoBota', label:'', linkedEquipoId:eq.id, linkedCondition:'bajoBota', active:false});
+            markAsChanged();
+            renderMatrix(); renderCausaButtons(); updateSelectionUI();
+          });
+          document.getElementById('btnLinkAltoBota').addEventListener('click', ()=>{
+            const existing = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='altoBota');
+            if(existing){ state.causas = state.causas.filter(c=>c!==existing); delete state.trips[existing.id]; }
+            else state.causas.push({id:eq.id+'_altoBota', label:'', linkedEquipoId:eq.id, linkedCondition:'altoBota', active:false});
+            markAsChanged();
+            renderMatrix(); renderCausaButtons(); updateSelectionUI();
+          });
+        }
       }
       document.getElementById('btnDeleteSel').addEventListener('click', ()=>{
         state.equipos = state.equipos.filter(x=>x.id!==eq.id);
@@ -859,6 +921,8 @@
         const base = eq.label||eq.id;
         if(c.linkedCondition==='bajo') return base+' - Bajo Nivel';
         if(c.linkedCondition==='alto') return base+' - Alto Nivel';
+        if(c.linkedCondition==='bajoBota') return base+' - Bajo Nivel Bota';
+        if(c.linkedCondition==='altoBota') return base+' - Alto Nivel Bota';
         return base;
       }
     }
@@ -913,9 +977,9 @@
     // Puntos de anclaje: solo visibles en modo edición, para dibujar caños a mano.
     if(editMode){
       state.equipos.forEach(eq=>{
-        // Solo tanques, separadores y columnas tienen 4 puntos (arriba, abajo, izq, der)
+        // Solo tanques, separadores, columnas y acumuladores tienen 4 puntos (arriba, abajo, izq, der)
         // Todos los demás solo tienen izquierda y derecha
-        const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna');
+        const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna' || eq.tipo==='acumulador');
         const ports = has4Ports ? ['left','right','top','bottom'] : ['left','right'];
         ports.forEach(port=>{
           const pt = portPoint(eq, port);
@@ -953,7 +1017,7 @@
         if(bend && path.bend){ bend.setAttribute('cx',path.bend.x); bend.setAttribute('cy',path.bend.y); }
       }
     });
-    const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna');
+    const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna' || eq.tipo==='acumulador');
     const portsToUpdate = has4Ports ? ['left','right','top','bottom'] : ['left','right'];
     portsToUpdate.forEach(port=>{
       const a = document.getElementById(eq.id+'-anchor-'+port);
@@ -1119,9 +1183,22 @@
     const def = TYPE_DEFS[tipo];
     const card = document.createElement('div');
     card.className = 'type-card';
+    // Hacer íconos más pequeños solo para separador y acumulador
+    if(tipo === 'separador' || tipo === 'acumulador'){
+      card.classList.add('small-icon');
+    }
     card.title = 'Agregar '+def.name;
     const svg = el('svg',{viewBox:`-4 -4 ${def.w+8} ${def.h+8}`, class:'icon-preview'}, null);
     const g = el('g',{}, svg);
+
+    // Escalar el separador y acumulador para que se vean más pequeños en el botón
+    if(tipo === 'separador'){
+      g.setAttribute('transform', 'scale(0.7) translate(20, 10)');
+    }
+    if(tipo === 'acumulador'){
+      g.setAttribute('transform', 'scale(0.7) translate(10, 10)');
+    }
+
     def.render(g, {id:'_prev_'+tipo, tipo, label:'', state: JSON.parse(JSON.stringify(def.defaultState))});
     card.appendChild(svg);
     const span = document.createElement('span'); span.textContent = def.name;
