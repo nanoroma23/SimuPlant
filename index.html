@@ -232,7 +232,6 @@
   <div class="stage">
     <div class="float-controls-left">
       <button id="btnProyectos" title="Proyectos guardados">📁 Proyectos</button>
-      <button id="btnGuardar" title="Guardar copia del simulador con esta planta">💾 Guardar</button>
       <button id="btnEditMode" title="Modo edición">✏ Editar</button>
     </div>
     <div class="float-controls-right">
@@ -319,17 +318,23 @@
 
     <div id="cloudStatus" class="cloud-status">Verificando conexión con Supabase…</div>
 
+    <p class="hint" style="margin:10px 0 6px;"><b>Guardados en la nube:</b></p>
+    <div id="cloudProjectsList" style="max-height:180px;overflow-y:auto;margin-bottom:10px;"></div>
+
+    <div class="edit-row" style="border-top:1px solid var(--border-panel);padding-top:10px;">
+      <button id="btnNewProject" style="flex:1;">➕ Nuevo proyecto</button>
+    </div>
+
     <div class="edit-row">
       <input type="text" id="projectNameInput" placeholder="Nombre del proyecto actual">
       <button id="btnSaveCloud" class="primary">☁ Guardar</button>
     </div>
     <p class="hint" id="currentProjectHint" style="margin:2px 0 10px;"></p>
 
-    <div id="cloudProjectsList" style="max-height:220px;overflow-y:auto;margin-bottom:10px;"></div>
-
     <div class="edit-row" style="border-top:1px solid var(--border-panel);padding-top:10px;">
-      <button id="btnExportJson" style="flex:1;">📤 Exportar a PC (.json)</button>
-      <button id="btnImportJsonTrigger" style="flex:1;">📥 Importar desde PC</button>
+      <button id="btnExportHtml" style="flex:1;">📄 Exportar HTML</button>
+      <button id="btnExportJson" style="flex:1;">📤 Exportar JSON</button>
+      <button id="btnImportJsonTrigger" style="flex:1;">📥 Importar JSON</button>
       <input type="file" id="fileImportInput" accept="application/json" style="display:none;">
     </div>
 
@@ -611,6 +616,7 @@
   function renameEquipo(eq){
     openTextModal('Nuevo nombre / tag para "'+(eq.label||eq.id)+'":', eq.label||'', (nuevo)=>{
       eq.label = nuevo;
+      markAsChanged();
       applyLabelUpdate(eq);
     });
   }
@@ -634,6 +640,7 @@
     if(commit && floatEditorTarget){
       const input = document.getElementById('floatEditInput');
       floatEditorTarget.label = input.value.trim();
+      markAsChanged();
       applyLabelUpdate(floatEditorTarget);
     }
     box.style.display = 'none';
@@ -676,6 +683,7 @@
         eq.label = e.target.value;
         const labelEl = document.getElementById(eq.id+'-label');
         if(labelEl) labelEl.textContent = isInstrument ? eq.label : (eq.label||eq.id);
+        markAsChanged();
         renderMatrix();
         renderCausaButtons();
       });
@@ -686,6 +694,7 @@
             setValveState(eq.id, 'open');
             restoreAdjacent(eq.id);
             const fmEl = document.getElementById(eq.id+'-failmode'); if(fmEl) fmEl.textContent = 'FC';
+            markAsChanged();
           }
           updateSelectionUI();
         });
@@ -695,6 +704,7 @@
             setValveState(eq.id, 'closed');
             cutEfectoFlow(eq.id);
             const fmEl = document.getElementById(eq.id+'-failmode'); if(fmEl) fmEl.textContent = 'FO';
+            markAsChanged();
           }
           updateSelectionUI();
         });
@@ -704,12 +714,14 @@
           const existing = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='bajo');
           if(existing){ state.causas = state.causas.filter(c=>c!==existing); delete state.trips[existing.id]; }
           else state.causas.push({id:eq.id+'_bajo', label:'', linkedEquipoId:eq.id, linkedCondition:'bajo', active:false});
+          markAsChanged();
           renderMatrix(); renderCausaButtons(); updateSelectionUI();
         });
         document.getElementById('btnLinkAlto').addEventListener('click', ()=>{
           const existing = state.causas.find(c=>c.linkedEquipoId===eq.id && c.linkedCondition==='alto');
           if(existing){ state.causas = state.causas.filter(c=>c!==existing); delete state.trips[existing.id]; }
           else state.causas.push({id:eq.id+'_alto', label:'', linkedEquipoId:eq.id, linkedCondition:'alto', active:false});
+          markAsChanged();
           renderMatrix(); renderCausaButtons(); updateSelectionUI();
         });
       }
@@ -719,6 +731,7 @@
         state.causas.filter(c=>c.linkedEquipoId===eq.id).forEach(c=> delete state.trips[c.id]);
         state.causas = state.causas.filter(c=>c.linkedEquipoId!==eq.id);
         Object.keys(state.trips).forEach(cId=>{ if(state.trips[cId]) delete state.trips[cId][eq.id]; });
+        markAsChanged();
         clearSelection(); render();
       });
     } else {
@@ -728,6 +741,7 @@
         <button class="danger" id="btnDeleteSel" style="width:100%;">🗑 Eliminar caño</button>`;
       document.getElementById('btnDeleteSel').addEventListener('click', ()=>{
         state.canios = state.canios.filter(x=>x.id!==pipe.id);
+        markAsChanged();
         clearSelection(); render();
       });
     }
@@ -848,9 +862,11 @@
   }
   function onDragEndAndSelect(){
     const id = dragState && dragState.id;
+    const moved = dragState && dragState.moved;
     dragState = null;
     window.removeEventListener('mousemove', onDragMove);
     window.removeEventListener('mouseup', onDragEndAndSelect);
+    if(moved) markAsChanged();
     if(id){
       selectItem('equipo', id);
     } else {
@@ -883,6 +899,7 @@
     if(bend && path.bend){ bend.setAttribute('cx',path.bend.x); bend.setAttribute('cy',path.bend.y); }
   }
   function onBendEnd(){
+    if(bendDragState) markAsChanged();
     bendDragState = null;
     window.removeEventListener('mousemove', onBendMove);
     window.removeEventListener('mouseup', onBendEnd);
@@ -917,6 +934,7 @@
     if(pendingConn.fromId !== eq.id){
       const id = generatePipeId();
       state.canios.push({id, from:pendingConn.fromId, to:eq.id, fromPort:pendingConn.fromPort, toPort:port, state:'flow'});
+      markAsChanged();
     }
     endConnectDrag();
     render();
@@ -1019,6 +1037,8 @@
     if(tipo==='transmisor' || tipo==='transmisor_flujo'){
       state.causas.push({id, label:'', linkedEquipoId:id, active:false});
     }
+    markAsChanged();
+    render(); // Renderizar inmediatamente para mostrar el equipo nuevo
     selectItem('equipo', id);
   }
 
@@ -1380,6 +1400,7 @@
         } else {
           openTextModal('Nuevo nombre para esta causa:', ca.label||ca.id, (nuevo)=>{
             ca.label = nuevo;
+            markAsChanged();
             renderMatrix(); renderCausaButtons();
           });
         }
@@ -1401,6 +1422,7 @@
           state.trips[ca.id] = state.trips[ca.id] || {};
           state.trips[ca.id][ef.id] = !state.trips[ca.id][ef.id];
           cell.classList.toggle('checked', state.trips[ca.id][ef.id]);
+          markAsChanged();
         });
         td.appendChild(cell); tr.appendChild(td);
       });
@@ -1415,6 +1437,7 @@
     state.causas = state.causas.filter(x=>x.id!==selectedCausaId);
     delete state.trips[selectedCausaId];
     selectedCausaId = null;
+    markAsChanged();
     renderMatrix(); renderCausaButtons();
   });
 
@@ -1442,6 +1465,7 @@
     renderMatrix();
   }
   function onRowDragEnd(){
+    if(rowDragState) markAsChanged();
     rowDragState = null;
     window.removeEventListener('mousemove', onRowDragMove);
     window.removeEventListener('mouseup', onRowDragEnd);
@@ -1480,6 +1504,7 @@
     renderMatrix();
   }
   function onColDragEnd(){
+    if(colDragState) markAsChanged();
     colDragState = null;
     window.removeEventListener('mousemove', onColDragMove);
     window.removeEventListener('mouseup', onColDragEnd);
@@ -1509,6 +1534,7 @@
     openTextModal('Nombre de la causa (ej. Pulsador Emergencia PE-01):', '', (label)=>{
       let n=1; while(getCausa('causa_'+n)) n++;
       state.causas.push({id:'causa_'+n, label, linkedEquipoId:null, active:false});
+      markAsChanged();
       renderMatrix(); renderCausaButtons();
     });
   });
@@ -1555,7 +1581,7 @@
     matrizOverlay.style.display = matrizDisplay;
     return html;
   }
-  document.getElementById('btnGuardar').addEventListener('click', ()=>{
+  document.getElementById('btnExportHtml').addEventListener('click', ()=>{
     openTextModal('Nombre del archivo a guardar:', 'simulador_trips', (nombre)=>{
       let filename = nombre.trim();
       if(!filename.toLowerCase().endsWith('.html')) filename += '.html';
@@ -1584,6 +1610,20 @@
   let supabaseClient = null;
   let currentProjectId = null;
   let currentProjectName = '';
+  let hasUnsavedChanges = false;
+
+  function markAsChanged(){
+    hasUnsavedChanges = true;
+    updateSaveButton();
+  }
+  function markAsSaved(){
+    hasUnsavedChanges = false;
+    updateSaveButton();
+  }
+  function updateSaveButton(){
+    const btn = document.getElementById('btnProyectos');
+    btn.innerHTML = hasUnsavedChanges ? '📁 Proyectos <span style="color:var(--orange);font-size:16px;">●</span>' : '📁 Proyectos';
+  }
 
   function cloudConfigured(){
     return !!(window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY
@@ -1610,6 +1650,7 @@
     document.getElementById('projectNameInput').value = currentProjectName;
     updateCurrentProjectHint();
     selected = null;
+    markAsSaved();
     resetPlant();
   }
 
@@ -1640,28 +1681,32 @@
     statusEl.textContent = 'Conectado a Supabase. '+data.length+' proyecto(s) guardado(s).';
     statusEl.className = 'cloud-status ok';
     listEl.innerHTML = '';
-    data.forEach(proj=>{
-      const row = document.createElement('div'); row.className='project-row';
-      const name = document.createElement('span'); name.className='pname'; name.textContent = proj.name;
-      const date = document.createElement('span'); date.className='pdate';
-      date.textContent = new Date(proj.updated_at).toLocaleString();
-      const openBtn = document.createElement('button'); openBtn.textContent='Abrir';
-      openBtn.addEventListener('click', async ()=>{
-        const { data:full, error:err2 } = await sb.from('projects').select('data,name').eq('id',proj.id).single();
-        if(err2){ alert('No se pudo abrir: '+err2.message); return; }
-        loadStateIntoApp(full.data, proj.id, full.name);
-        document.getElementById('projectsModal').style.display='none';
+    if(data.length === 0){
+      listEl.innerHTML = '<p class="hint" style="text-align:center;padding:20px;">No hay proyectos guardados todavía.<br>Creá uno nuevo o importá desde un archivo.</p>';
+    } else {
+      data.forEach(proj=>{
+        const row = document.createElement('div'); row.className='project-row';
+        const name = document.createElement('span'); name.className='pname'; name.textContent = proj.name;
+        const date = document.createElement('span'); date.className='pdate';
+        date.textContent = new Date(proj.updated_at).toLocaleString();
+        const openBtn = document.createElement('button'); openBtn.textContent='Abrir';
+        openBtn.addEventListener('click', async ()=>{
+          const { data:full, error:err2 } = await sb.from('projects').select('data,name').eq('id',proj.id).single();
+          if(err2){ alert('No se pudo abrir: '+err2.message); return; }
+          loadStateIntoApp(full.data, proj.id, full.name);
+          document.getElementById('projectsModal').style.display='none';
+        });
+        const delBtn = document.createElement('button'); delBtn.className='danger'; delBtn.textContent='🗑';
+        delBtn.addEventListener('click', async ()=>{
+          const { error:err3 } = await sb.from('projects').delete().eq('id',proj.id);
+          if(err3){ alert('No se pudo borrar: '+err3.message); return; }
+          if(currentProjectId===proj.id){ currentProjectId=null; updateCurrentProjectHint(); }
+          refreshCloudStatusAndList();
+        });
+        row.appendChild(name); row.appendChild(date); row.appendChild(openBtn); row.appendChild(delBtn);
+        listEl.appendChild(row);
       });
-      const delBtn = document.createElement('button'); delBtn.className='danger'; delBtn.textContent='🗑';
-      delBtn.addEventListener('click', async ()=>{
-        const { error:err3 } = await sb.from('projects').delete().eq('id',proj.id);
-        if(err3){ alert('No se pudo borrar: '+err3.message); return; }
-        if(currentProjectId===proj.id){ currentProjectId=null; updateCurrentProjectHint(); }
-        refreshCloudStatusAndList();
-      });
-      row.appendChild(name); row.appendChild(date); row.appendChild(openBtn); row.appendChild(delBtn);
-      listEl.appendChild(row);
-    });
+    }
   }
 
   document.getElementById('btnProyectos').addEventListener('click', ()=>{
@@ -1670,6 +1715,13 @@
   });
   document.getElementById('btnCloseProjects').addEventListener('click', ()=>{
     document.getElementById('projectsModal').style.display = 'none';
+  });
+
+  document.getElementById('btnNewProject').addEventListener('click', ()=>{
+    openTextModal('Nombre del nuevo proyecto:', 'Nuevo proyecto', (nombre)=>{
+      loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, nombre);
+      document.getElementById('projectsModal').style.display = 'none';
+    });
   });
 
   document.getElementById('btnSaveCloud').addEventListener('click', async ()=>{
@@ -1691,6 +1743,7 @@
     }
     if(result.error){ alert('Error al guardar: '+result.error.message); return; }
     currentProjectName = name;
+    markAsSaved();
     updateCurrentProjectHint();
     refreshCloudStatusAndList();
   });
@@ -1728,6 +1781,12 @@
   });
 
   resetPlant();
+
+  // Abrir el modal de proyectos al iniciar la app
+  window.addEventListener('load', ()=>{
+    document.getElementById('projectsModal').style.display = 'flex';
+    refreshCloudStatusAndList();
+  });
 })();
 </script>
 </body>
