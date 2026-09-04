@@ -186,6 +186,7 @@
   .trip-table thead th .th-inner{justify-content:center;}
 
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:flex;align-items:center;justify-content:center;}
+  #genericModal{z-index:350;}
   .modal-box{background:var(--bg-panel);border:1px solid var(--gray-4);border-radius:10px;padding:18px;width:320px;box-shadow:0 10px 30px rgba(0,0,0,.5);}
   .modal-box input{width:100%;background:var(--bg-panel-alt);border:1px solid var(--border-panel);color:var(--text-light);
     padding:8px 10px;border-radius:6px;font-size:13px;margin-bottom:14px;box-sizing:border-box;}
@@ -232,6 +233,7 @@
   <div class="stage">
     <div class="float-controls-left">
       <button id="btnProyectos" title="Proyectos guardados">📁 Proyectos</button>
+      <button id="btnGuardar" title="Guardar proyecto en Supabase">💾 Guardar</button>
       <button id="btnEditMode" title="Modo edición">✏ Editar</button>
     </div>
     <div class="float-controls-right">
@@ -319,20 +321,10 @@
     <div id="cloudStatus" class="cloud-status">Verificando conexión con Supabase…</div>
 
     <p class="hint" style="margin:10px 0 6px;"><b>Guardados en la nube:</b></p>
-    <div id="cloudProjectsList" style="max-height:180px;overflow-y:auto;margin-bottom:10px;"></div>
+    <div id="cloudProjectsList" style="max-height:250px;overflow-y:auto;margin-bottom:10px;"></div>
 
-    <div class="edit-row" style="border-top:1px solid var(--border-panel);padding-top:10px;">
+    <div class="edit-row" style="border-top:1px solid var(--border-panel);padding-top:10px;margin-bottom:10px;">
       <button id="btnNewProject" style="flex:1;">➕ Nuevo proyecto</button>
-    </div>
-
-    <div class="edit-row">
-      <input type="text" id="projectNameInput" placeholder="Nombre del proyecto actual">
-      <button id="btnSaveCloud" class="primary">☁ Guardar</button>
-    </div>
-    <p class="hint" id="currentProjectHint" style="margin:2px 0 10px;"></p>
-
-    <div class="edit-row" style="border-top:1px solid var(--border-panel);padding-top:10px;">
-      <button id="btnExportHtml" style="flex:1;">📄 Exportar HTML</button>
       <button id="btnExportJson" style="flex:1;">📤 Exportar JSON</button>
       <button id="btnImportJsonTrigger" style="flex:1;">📥 Importar JSON</button>
       <input type="file" id="fileImportInput" accept="application/json" style="display:none;">
@@ -589,7 +581,7 @@
   }
 
   // ================= MODAL GENÉRICO (reemplaza los prompt() nativos del navegador) =================
-  function openTextModal(labelText, defaultValue, onConfirm){
+  function openTextModal(labelText, defaultValue, onConfirm, onCancel){
     const overlay = document.getElementById('genericModal');
     document.getElementById('modalLabel').textContent = labelText;
     const input = document.getElementById('modalInput');
@@ -601,14 +593,14 @@
     function cleanup(){
       overlay.style.display = 'none';
       okBtn.removeEventListener('click', onOk);
-      cancelBtn.removeEventListener('click', onCancel);
+      cancelBtn.removeEventListener('click', onCancelHandler);
       input.removeEventListener('keydown', onKey);
     }
     function onOk(){ const v = input.value.trim(); cleanup(); if(v) onConfirm(v); }
-    function onCancel(){ cleanup(); }
-    function onKey(e){ if(e.key==='Enter') onOk(); if(e.key==='Escape') onCancel(); }
+    function onCancelHandler(){ cleanup(); if(onCancel) onCancel(); }
+    function onKey(e){ if(e.key==='Enter') onOk(); if(e.key==='Escape') onCancelHandler(); }
     okBtn.addEventListener('click', onOk);
-    cancelBtn.addEventListener('click', onCancel);
+    cancelBtn.addEventListener('click', onCancelHandler);
     input.addEventListener('keydown', onKey);
   }
 
@@ -1551,49 +1543,6 @@
     }
   });
 
-  // ================= GUARDAR (descarga una copia con la planta actual) =================
-  function exportCurrentHtml(){
-    const editPanelDisplay = editPanel.style.display;
-    const logBoxDisplay = logBox.style.display;
-    const matrizDisplay = matrizOverlay.style.display;
-    editPanel.style.display = 'none';
-    logBox.style.display = 'flex';
-    matrizOverlay.style.display = 'none';
-
-    // Las paletas de figuras (Causas/Efectos) se arman UNA sola vez al cargar el script,
-    // asumiendo que arrancan vacías. Si guardamos con las tarjetas ya dibujadas, al abrir
-    // el archivo guardado el script las vuelve a armar encima y quedan duplicadas.
-    // Por eso las vaciamos antes de capturar el HTML y las restauramos después.
-    const causasPaletteEl = document.getElementById('causasPalette');
-    const efectosPaletteEl = document.getElementById('efectosPalette');
-    const causasPaletteHtml = causasPaletteEl.innerHTML;
-    const efectosPaletteHtml = efectosPaletteEl.innerHTML;
-    causasPaletteEl.innerHTML = '';
-    efectosPaletteEl.innerHTML = '';
-
-    document.getElementById('initialState').textContent = JSON.stringify(state);
-    const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-
-    causasPaletteEl.innerHTML = causasPaletteHtml;
-    efectosPaletteEl.innerHTML = efectosPaletteHtml;
-    editPanel.style.display = editPanelDisplay;
-    logBox.style.display = logBoxDisplay;
-    matrizOverlay.style.display = matrizDisplay;
-    return html;
-  }
-  document.getElementById('btnExportHtml').addEventListener('click', ()=>{
-    openTextModal('Nombre del archivo a guardar:', 'simulador_trips', (nombre)=>{
-      let filename = nombre.trim();
-      if(!filename.toLowerCase().endsWith('.html')) filename += '.html';
-      const html = exportCurrentHtml();
-      const blob = new Blob([html], {type:'text/html'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
-  });
 
   document.getElementById('floatEditOk').addEventListener('click', ()=> closeFloatEditor(true));
   document.getElementById('floatEditInput').addEventListener('keydown', e=>{
@@ -1621,8 +1570,8 @@
     updateSaveButton();
   }
   function updateSaveButton(){
-    const btn = document.getElementById('btnProyectos');
-    btn.innerHTML = hasUnsavedChanges ? '📁 Proyectos <span style="color:var(--orange);font-size:16px;">●</span>' : '📁 Proyectos';
+    const btn = document.getElementById('btnGuardar');
+    btn.innerHTML = hasUnsavedChanges ? '💾 Guardar <span style="color:var(--orange);font-size:16px;">●</span>' : '💾 Guardar';
   }
 
   function cloudConfigured(){
@@ -1647,19 +1596,11 @@
     state.causas = newState.causas || [];
     currentProjectId = projectId || null;
     currentProjectName = projectName || '';
-    document.getElementById('projectNameInput').value = currentProjectName;
-    updateCurrentProjectHint();
     selected = null;
     markAsSaved();
     resetPlant();
   }
 
-  function updateCurrentProjectHint(){
-    const hint = document.getElementById('currentProjectHint');
-    hint.textContent = currentProjectId
-      ? 'Editando un proyecto ya guardado en la nube — "☁ Guardar" actualiza este mismo.'
-      : 'Sin guardar en la nube todavía — "☁ Guardar" crea un proyecto nuevo.';
-  }
 
   async function refreshCloudStatusAndList(){
     const statusEl = document.getElementById('cloudStatus');
@@ -1717,23 +1658,34 @@
     document.getElementById('projectsModal').style.display = 'none';
   });
 
-  document.getElementById('btnNewProject').addEventListener('click', ()=>{
-    openTextModal('Nombre del nuevo proyecto:', 'Nuevo proyecto', (nombre)=>{
-      loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, nombre);
-      document.getElementById('projectsModal').style.display = 'none';
-    });
-  });
-
-  document.getElementById('btnSaveCloud').addEventListener('click', async ()=>{
+  document.getElementById('btnGuardar').addEventListener('click', async ()=>{
     const sb = getSupabase();
     if(!sb){ alert('Supabase no está configurado todavía.'); return; }
-    const name = document.getElementById('projectNameInput').value.trim();
-    if(!name){ alert('Ponele un nombre al proyecto antes de guardar.'); return; }
+
+    if(!currentProjectName){
+      // Si no tiene nombre, pedir uno
+      openTextModal('Nombre del proyecto:', 'Mi proyecto', async (nombre)=>{
+        currentProjectName = nombre;
+        await saveToCloud();
+      });
+    } else {
+      await saveToCloud();
+    }
+  });
+
+  async function saveToCloud(){
+    const sb = getSupabase();
+    if(!sb) return;
+
+    const name = currentProjectName.trim();
+    if(!name){ alert('El proyecto necesita un nombre.'); return; }
+
     const payload = {
       name,
       data: {equipos:state.equipos, canios:state.canios, trips:state.trips, causas:state.causas},
       updated_at: new Date().toISOString()
     };
+
     let result;
     if(currentProjectId){
       result = await sb.from('projects').update(payload).eq('id', currentProjectId);
@@ -1741,12 +1693,43 @@
       result = await sb.from('projects').insert(payload).select('id').single();
       if(!result.error) currentProjectId = result.data.id;
     }
-    if(result.error){ alert('Error al guardar: '+result.error.message); return; }
+
+    if(result.error){
+      alert('Error al guardar: '+result.error.message);
+      return;
+    }
+
     currentProjectName = name;
     markAsSaved();
-    updateCurrentProjectHint();
-    refreshCloudStatusAndList();
+    log('Proyecto "'+name+'" guardado en la nube.', 'info');
+  }
+
+  document.getElementById('btnNewProject').addEventListener('click', ()=>{
+    const modal = document.getElementById('genericModal');
+    const projectsModal = document.getElementById('projectsModal');
+
+    // Posicionar el modal genérico arriba del modal de proyectos
+    modal.style.alignItems = 'flex-start';
+    modal.style.paddingTop = '80px';
+
+    openTextModal('Nombre del nuevo proyecto:', 'Nuevo proyecto',
+      (nombre)=>{
+        // onConfirm
+        loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, nombre);
+        projectsModal.style.display = 'none';
+
+        // Restaurar posición del modal genérico
+        modal.style.alignItems = 'center';
+        modal.style.paddingTop = '0';
+      },
+      ()=>{
+        // onCancel - restaurar posición del modal genérico
+        modal.style.alignItems = 'center';
+        modal.style.paddingTop = '0';
+      }
+    );
   });
+
 
   // ---- Exportar / Importar como archivo .json local ----
   document.getElementById('btnExportJson').addEventListener('click', ()=>{
