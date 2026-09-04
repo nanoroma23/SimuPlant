@@ -46,6 +46,7 @@
   button.danger{border-color:#8a4a4a;}
   button.danger:hover{background:#5a2e2e;}
   button:disabled{opacity:.35;cursor:not-allowed;}
+  .btn-fixed-width{min-width:100px;}
   .sep{width:1px;align-self:stretch;background:var(--border-panel);margin:0 2px;}
 
   .diagram-wrap{position:relative;background:var(--bg-diagram);flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden;cursor:grab;}
@@ -233,8 +234,8 @@
   <div class="stage">
     <div class="float-controls-left">
       <button id="btnProyectos" title="Proyectos guardados">📁 Proyectos</button>
-      <button id="btnGuardar" title="Guardar proyecto en Supabase">💾 Guardar</button>
-      <button id="btnEditMode" title="Modo edición">✏ Editar</button>
+      <button id="btnGuardar" class="btn-fixed-width" title="Guardar proyecto en Supabase">💾 Guardar</button>
+      <button id="btnEditMode" class="btn-fixed-width" title="Modo edición">✏️ Editar</button>
     </div>
     <div class="float-controls-right">
       <div class="transition-control" title="Tiempo de transición naranja → rojo en los caños">
@@ -808,7 +809,10 @@
     // Puntos de anclaje: solo visibles en modo edición, para dibujar caños a mano.
     if(editMode){
       state.equipos.forEach(eq=>{
-        const ports = (eq.tipo==='transmisor' || eq.tipo==='transmisor_flujo') ? ['left','right'] : ['left','right','top','bottom'];
+        // Solo tanques, separadores y columnas tienen 4 puntos (arriba, abajo, izq, der)
+        // Todos los demás solo tienen izquierda y derecha
+        const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna');
+        const ports = has4Ports ? ['left','right','top','bottom'] : ['left','right'];
         ports.forEach(port=>{
           const pt = portPoint(eq, port);
           const a = el('circle',{id:eq.id+'-anchor-'+port,class:'anchor-point', cx:pt.x, cy:pt.y, r:5}, canvasGroup);
@@ -845,7 +849,9 @@
         if(bend && path.bend){ bend.setAttribute('cx',path.bend.x); bend.setAttribute('cy',path.bend.y); }
       }
     });
-    ['left','right','top','bottom'].forEach(port=>{
+    const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna');
+    const portsToUpdate = has4Ports ? ['left','right','top','bottom'] : ['left','right'];
+    portsToUpdate.forEach(port=>{
       const a = document.getElementById(eq.id+'-anchor-'+port);
       if(!a) return;
       const pt2 = portPoint(eq, port);
@@ -1042,11 +1048,12 @@
   btnEditMode.addEventListener('click', ()=>{
     editMode = !editMode;
     clearSelection();
-    btnEditMode.textContent = editMode ? '✅ Editar' : '✏ Editar';
+    btnEditMode.innerHTML = editMode ? '🔧 Editando' : '✏️ Editar';
     btnEditMode.classList.toggle('primary', editMode);
     editPanel.style.display = editMode ? 'flex' : 'none';
     logBox.style.display = editMode ? 'none' : 'flex';
     simButtons.forEach(b=> b.disabled = editMode);
+    renderCausaButtons(); // Actualizar barra de causas
     render();
   });
 
@@ -1285,6 +1292,9 @@
   }
 
   function handleSimClick(eq){
+    // No permitir simulación en modo edición
+    if(editMode) return;
+
     const cat = TYPE_DEFS[eq.tipo].category;
     if(cat==='causa'){
       if(eq.tipo==='transmisor' || eq.tipo==='transmisor_flujo'){
@@ -1506,14 +1516,14 @@
     const bar = document.getElementById('causaBar');
     if(!bar) return;
     bar.innerHTML = '';
-    if(state.causas.length===0){ bar.style.display='none'; return; }
+    // Ocultar barra de causas en modo edición o si no hay causas
+    if(editMode || state.causas.length===0){ bar.style.display='none'; return; }
     bar.style.display='flex';
     state.causas.forEach(c=>{
       const btn = document.createElement('button');
       btn.className = 'causa-btn' + (c.active ? ' active' : '');
       btn.textContent = causaLabel(c);
-      btn.title = editMode ? 'Salí del modo edición para activar causas' : 'Activar/desactivar esta causa';
-      btn.disabled = editMode;
+      btn.title = 'Activar/desactivar esta causa';
       btn.addEventListener('click', ()=> toggleCausa(c.id));
       bar.appendChild(btn);
     });
