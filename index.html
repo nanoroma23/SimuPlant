@@ -327,7 +327,10 @@
 
   <aside>
     <div class="panel log-panel side-fill" id="logBox">
-      <h3>Registro de eventos</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0;">Registro de eventos</h3>
+        <button id="btnExpandLog" title="Expandir registro" style="padding:4px 8px;font-size:12px;">⤢</button>
+      </div>
       <div class="log-list" id="logList"></div>
     </div>
 
@@ -380,6 +383,16 @@
 <div class="float-editor" id="floatEditor" style="display:none;">
   <input type="text" id="floatEditInput" placeholder="Nombre / tag">
   <button id="floatEditOk">✓</button>
+</div>
+
+<div class="modal-overlay" id="logExpandedModal" style="display:none;">
+  <div class="modal-box" style="width:600px;max-width:90vw;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <p class="hint" style="margin:0;"><b>Registro de eventos</b></p>
+      <button id="btnCloseExpandLog">Cerrar</button>
+    </div>
+    <div class="log-list" id="logListExpanded" style="max-height:60vh;"></div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="genericModal" style="display:none;">
@@ -457,6 +470,12 @@
     el.innerHTML='<span class="log-time">'+T()+'</span>'+msg;
     logList.appendChild(el);
     logList.scrollTop = logList.scrollHeight;
+    const expanded = document.getElementById('logListExpanded');
+    if(expanded){
+      const el2 = el.cloneNode(true);
+      expanded.appendChild(el2);
+      expanded.scrollTop = expanded.scrollHeight;
+    }
   }
 
   // ================= SVG HELPERS =================
@@ -1314,13 +1333,19 @@
   // lado tampoco puede tenerlo (es la misma línea física). Da igual cuál sea "entrada" y
   // cuál "salida" — se replica en ambos sentidos por igual.
   function mirrorFTFlow(p){
-    if(p.state!=='noflow') return;
+    if(p.state!=='noflow' && p.state!=='flow') return;
     [p.from, p.to].forEach(id=>{
       const eq = getEquipo(id);
       if(!eq || eq.tipo!=='transmisor_flujo') return;
-      state.canios
-        .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='noflow')
-        .forEach(op=> propagateNoFlow(op.id));
+      if(p.state==='noflow'){
+        state.canios
+          .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='noflow')
+          .forEach(op=> propagateNoFlow(op.id));
+      } else { // 'flow': se restablece de un lado, se replica del otro
+        state.canios
+          .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='flow')
+          .forEach(op=> setPipeState(op.id, 'flow'));
+      }
     });
   }
 
@@ -1374,8 +1399,7 @@
       if(allLowFlow && eq.state.ok){
         // TODOS los caños tienen bajo caudal -> activar alarma
         if(causa && !causa.active){
-          log(causaLabel(causa)+' detecta bajo caudal en todos los lados.','effect');
-          toggleCausa(causa.id);
+          toggleCausa(causa.id); // ya loguea "activada" por su cuenta
         } else if(!causa){
           setFlowMeterState(id, false);
         }
@@ -1415,7 +1439,6 @@
       const cur = getPipe(pipeId);
       if(!cur || cur.state!=='transition') return;
       setPipeState(pipeId,'noflow');
-      log('Caño '+labelOf(p.from)+' → '+labelOf(p.to)+' sin caudal.','effect');
       const downstream = getEquipo(p.to);
       // Los recipientes con nivel (tanque/separador) actúan como buffer: si se les
       // corta la entrada, el nivel cae de a poco pero la salida NO pierde caudal
@@ -1433,7 +1456,7 @@
     const prev = state.canios.find(p=>p.to===efectoId);
     if(prev){
       setPipeState(prev.id,'transition');
-      schedule(()=>{ if(getPipe(prev.id).state==='transition'){ setPipeState(prev.id,'noflow'); log('Caño '+labelOf(prev.from)+' → '+labelOf(prev.to)+' sin caudal.','effect'); } },TRANSITION_MS);
+      schedule(()=>{ if(getPipe(prev.id).state==='transition'){ setPipeState(prev.id,'noflow'); } },TRANSITION_MS);
     }
     state.canios.filter(p=>p.from===efectoId).forEach(p=> propagateNoFlow(p.id, visited));
   }
@@ -1590,8 +1613,7 @@
                              ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && !eq.state.run);
 
     if(isInFailPosition && !canManuallyRestore(eq.id)){
-      log('No se puede reponer '+labelOf(eq.id)+': todas las causas deben desactivarse o tener permiso manual (1).','info');
-      return;
+      return; // bloqueado por una causa pendiente: no es un evento, no se registra
     }
 
     if(eq.tipo==='valvula'){
@@ -1641,6 +1663,8 @@
     });
     state.causas.forEach(c=>{ c.active=false; });
     logList.innerHTML='';
+    const expandedClear = document.getElementById('logListExpanded');
+    if(expandedClear) expandedClear.innerHTML='';
     updateEffectsAvailability(); // Actualizar disponibilidad
     render();
     log('Planta reseteada a condición normal de operación.','info');
@@ -2401,6 +2425,15 @@
 
   setupImportHandler('fileImportInput');
   setupImportHandler('fileImportInput2');
+
+  document.getElementById('btnExpandLog').addEventListener('click', ()=>{
+    document.getElementById('logExpandedModal').style.display = 'flex';
+    const expanded = document.getElementById('logListExpanded');
+    expanded.scrollTop = expanded.scrollHeight;
+  });
+  document.getElementById('btnCloseExpandLog').addEventListener('click', ()=>{
+    document.getElementById('logExpandedModal').style.display = 'none';
+  });
 
   resetPlant();
 
