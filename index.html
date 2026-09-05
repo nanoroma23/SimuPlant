@@ -102,6 +102,10 @@
   .valve-tri.closed{fill:var(--tint-red);stroke:var(--red);stroke-width:3;}
   .valve-tri.ready{fill:var(--tint-orange);stroke:var(--orange);stroke-width:3;}
   .valve-outline{fill:none;stroke:var(--equip-line);stroke-width:2;}
+  .bota-line{fill:none;stroke-width:2.5;transition:stroke .4s ease;}
+  .bota-line.normal{stroke:var(--equip-line);}
+  .bota-line.bajo{stroke:var(--red);}
+  .bota-line.alto{stroke:var(--orange);}
   .valve-badge{font-size:10px;font-weight:700;font-family:inherit;transition:fill .4s ease;}
   .valve-badge.open{fill:#1f7a3f;} .valve-badge.closing{fill:#a15c00;} .valve-badge.closed{fill:var(--red);} .valve-badge.ready{fill:#a15c00;}
 
@@ -156,8 +160,9 @@
     background:var(--bg-app);border-left:3px solid var(--pipe-idle);flex:none;}
   .log-entry.cause{border-left-color:var(--red);color:#ffb3b3;}
   .log-entry.effect{border-left-color:var(--orange);color:#ffd6ac;}
+  .log-entry.restore{border-left-color:var(--green);color:#b3ffb3;}
   .log-entry.info{border-left-color:var(--text-dim-light);color:var(--text-dim-light);}
-  .log-time{color:var(--gray-3);margin-right:6px;}
+  .log-num{color:var(--text-light);margin-right:6px;font-weight:700;}
 
   .anchor-point{fill:var(--orange);stroke:var(--bg-diagram);stroke-width:1.5;cursor:crosshair;}
   .anchor-point:hover{fill:var(--red);r:6;}
@@ -330,9 +335,9 @@
 
   <aside>
     <div class="panel log-panel side-fill" id="logBox">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;">
         <h3 style="margin:0;">Registro de eventos</h3>
-        <div style="display:flex;gap:4px;">
+        <div style="display:flex;gap:4px;align-items:flex-start;">
           <button id="btnCopyLog" title="Copiar registro" style="padding:4px 8px;font-size:12px;">📋</button>
           <button id="btnExpandLog" title="Expandir registro" style="padding:4px 8px;font-size:12px;">⤢</button>
         </div>
@@ -472,11 +477,16 @@
 (function(){
   // ================= LOG =================
   const logList = document.getElementById('logList');
-  function T(){ const d=new Date(); return d.toLocaleTimeString('es-AR',{hour12:false})+'.'+String(d.getMilliseconds()).padStart(3,'0'); }
+  let cascadeLevel = 1;
   function log(msg, type){
     const el=document.createElement('div');
     el.className='log-entry '+(type||'info');
-    el.innerHTML='<span class="log-time">'+T()+'</span>'+msg;
+    // Solo mostrar número si no es el mensaje de reset
+    if(type && type!=='info'){
+      el.innerHTML='<span class="log-num">'+cascadeLevel+')</span>'+msg;
+    } else {
+      el.innerHTML=msg;
+    }
     logList.appendChild(el);
     logList.scrollTop = logList.scrollHeight;
     const expanded = document.getElementById('logListExpanded');
@@ -485,6 +495,12 @@
       expanded.appendChild(el2);
       expanded.scrollTop = expanded.scrollHeight;
     }
+  }
+  function resetLog(){
+    cascadeLevel = 1;
+  }
+  function nextCascadeLevel(){
+    cascadeLevel++;
   }
 
   // ================= SVG HELPERS =================
@@ -536,10 +552,20 @@
         const run = eq.state.run;
         const ready = eq.state.ready || false;
         const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
-        el('circle',{id:eq.id+'-body',class:'pump-body '+stateClass,cx:28,cy:28,r:26,'stroke-width':3},g);
-        el('rect',{x:10,y:54,width:36,height:6,fill:'none',stroke:'var(--equip-line)','stroke-width':2},g);
-        el('polygon',{id:eq.id+'-blade',class:'pump-blade '+stateClass,points:'18,14 18,42 42,28',
-          fill:'var(--equip-line)'},g);
+        // Círculo principal
+        el('circle',{id:eq.id+'-body',class:'pump-body '+stateClass,cx:28,cy:28,r:20,'stroke-width':2.5},g);
+        // Círculo chico adentro
+        el('circle',{cx:28,cy:28,r:6,fill:'none',stroke:'var(--equip-line)','stroke-width':2},g);
+        // Fondo de la salida rectangular (primero el relleno)
+        el('rect',{class:'pump-body '+stateClass,x:28,y:8,width:25,height:12.5,'stroke-width':0},g);
+        // Recta tangente arriba (del color de la bomba)
+        el('line',{class:'pump-body '+stateClass,x1:28,y1:8,x2:53,y2:8,'stroke-width':2.5},g);
+        // Recta vertical hacia abajo
+        el('line',{class:'pump-body '+stateClass,x1:53,y1:8,x2:53,y2:20.5,'stroke-width':2.5},g);
+        // Recta horizontal hacia la izquierda hasta tocar el círculo
+        el('line',{class:'pump-body '+stateClass,x1:53,y1:20.5,x2:46.5,y2:20.5,'stroke-width':2.5},g);
+        // Base trapezoidal (contorno negro)
+        el('path',{d:'M20,48 L16,54 L40,54 L36,48',fill:'none',stroke:'var(--equip-line)','stroke-width':2.5,'stroke-linejoin':'miter'},g);
         el('text',{id:eq.id+'-label',x:28,y:76,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
         const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+stateClass,x:28,y:90,'text-anchor':'middle'},g);
         b.textContent = run?'EN MARCHA':(ready?'DISPONIBLE':'DETENIDA');
@@ -576,18 +602,12 @@
         el('rect',{class:'equip-outline',x:0,y:0,width:110,height:46,rx:22},g);
         const b = el('text',{id:eq.id+'-badge',class:'tank-badge '+nivel,x:55,y:27,'text-anchor':'middle'},g);
         b.textContent = nivelBadgeText(nivel);
-        // Bota hacia abajo: recipiente chico propio, con su propio relleno de nivel.
-        el('rect',{class:'tank-level-bg',x:55,y:46,width:45,height:30,rx:15},g);
-        const clipIdBota = eq.id+'-clipBota';
-        const clipBota = el('clipPath',{id:clipIdBota},g);
-        el('rect',{x:55,y:46,width:45,height:30,rx:15},clipBota);
+        // Bota hacia abajo: mismo trazo fino de siempre (dos líneas + arco), solo que
+        // ahora el color del trazo refleja el estado (verde/naranja/rojo).
         const nivelBota = eq.state.nivelBota || 'normal';
-        const lgBota = levelGeom(30, nivelBota);
-        el('rect',{id:eq.id+'-levelBota',class:'tank-level-fill '+nivelBota,x:55,width:45,
-          'clip-path':'url(#'+clipIdBota+')', y: 46+lgBota.y, height: lgBota.height},g);
-        el('rect',{class:'equip-outline',x:55,y:46,width:45,height:30,rx:15},g);
-        const bBota = el('text',{id:eq.id+'-badgeBota',class:'tank-badge '+nivelBota,x:77.5,y:65,'text-anchor':'middle','font-size':8.5},g);
-        bBota.textContent = nivelBadgeText(nivelBota);
+        el('line',{id:eq.id+'-botaLine1',class:'bota-line '+nivelBota,x1:65,y1:46,x2:65,y2:60},g);
+        el('line',{id:eq.id+'-botaLine2',class:'bota-line '+nivelBota,x1:90,y1:46,x2:90,y2:60},g);
+        el('path',{id:eq.id+'-botaArc',class:'bota-line '+nivelBota,fill:'none',d:'M65,60 A12.5,8 0 0,0 90,60'},g);
         el('rect',{class:'selection-highlight',x:-5,y:-5,width:140,height:86,rx:10},g);
       }},
     transmisor: { name:'Transmisor', category:'causa', w:35, h:35, defaultState:{ok:true},
@@ -619,8 +639,6 @@
           fill:'var(--equip-line)'},g).textContent = eq.failMode==='abre'?'FO':'FC';
         el('polygon',{id:eq.id+'-triL',class:'valve-tri '+displayState,points:'0,0 0,28 16,14'},g);
         el('polygon',{id:eq.id+'-triR',class:'valve-tri '+displayState,points:'32,0 32,28 16,14'},g);
-        el('line',{class:'valve-outline',x1:0,y1:0,x2:0,y2:28},g);
-        el('line',{class:'valve-outline',x1:32,y1:0,x2:32,y2:28},g);
         el('text',{id:eq.id+'-label',x:16,y:44,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
         const b = el('text',{id:eq.id+'-badge',class:'valve-badge '+displayState,x:16,y:57,'text-anchor':'middle'},g);
         b.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':(ready?'DISPONIBLE':'CERRADA');
@@ -652,7 +670,7 @@
         b.textContent = run?'ENCENDIDO':(ready?'DISPONIBLE':'APAGADO');
         el('rect',{class:'selection-highlight',x:-6,y:-6,width:72,height:118,rx:8},g);
       }},
-    columna: { name:'Columna', category:'causa', w:55, h:150, defaultState:{},
+    columna: { name:'Columna', category:'causa', w:55, h:150, defaultState:{nivel:'normal'},
       render(g,eq){
         el('rect',{class:'equip-outline equip-fill',x:0,y:0,width:55,height:150,rx:4},g);
         [25,55,85,115].forEach(y=> el('line',{class:'tray-line',x1:0,y1:y,x2:55,y2:y},g));
@@ -1228,20 +1246,23 @@
     const def = TYPE_DEFS[tipo];
     const card = document.createElement('div');
     card.className = 'type-card';
-    // Hacer íconos más pequeños solo para separador y acumulador
-    if(tipo === 'separador' || tipo === 'acumulador'){
+    // Hacer íconos más pequeños solo para separador, acumulador y válvula
+    if(tipo === 'separador' || tipo === 'acumulador' || tipo === 'valvula'){
       card.classList.add('small-icon');
     }
     card.title = 'Agregar '+def.name;
     const svg = el('svg',{viewBox:`-4 -4 ${def.w+8} ${def.h+8}`, class:'icon-preview'}, null);
     const g = el('g',{}, svg);
 
-    // Escalar el separador y acumulador para que se vean más pequeños en el botón
+    // Escalar el separador, acumulador y válvula para que se vean más pequeños en el botón
     if(tipo === 'separador'){
       g.setAttribute('transform', 'scale(0.7) translate(20, 10)');
     }
     if(tipo === 'acumulador'){
       g.setAttribute('transform', 'scale(0.7) translate(10, 10)');
+    }
+    if(tipo === 'valvula'){
+      g.setAttribute('transform', 'scale(0.75) translate(4, 3)');
     }
 
     def.render(g, {id:'_prev_'+tipo, tipo, label:'', state: JSON.parse(JSON.stringify(def.defaultState))});
@@ -1301,13 +1322,9 @@
   function setAcumuladorBotaState(id, nivel){
     const eq=getEquipo(id); if(!eq) return false;
     eq.state.nivelBota = nivel;
-    const level=document.getElementById(id+'-levelBota'), badge=document.getElementById(id+'-badgeBota');
-    if(!level||!badge) return false;
-    const lg = levelGeom(30, nivel);
-    level.classList.remove('normal','bajo','alto'); level.classList.add(nivel);
-    badge.classList.remove('normal','bajo','alto'); badge.classList.add(nivel);
-    badge.textContent = nivelBadgeText(nivel);
-    level.setAttribute('y', 46+lg.y); level.setAttribute('height', lg.height);
+    const l1=document.getElementById(id+'-botaLine1'), l2=document.getElementById(id+'-botaLine2'), arc=document.getElementById(id+'-botaArc');
+    if(!l1||!l2||!arc) return false;
+    [l1,l2,arc].forEach(elm=>{ elm.classList.remove('normal','bajo','alto'); elm.classList.add(nivel); });
     return true;
   }
   function setEquipoRunState(id, running){
@@ -1397,7 +1414,7 @@
     setTankState(id, nivel);
     const label = labelOf(id);
     log(nivel==='bajo' ? (label+' entra en BAJO NIVEL.') : nivel==='alto' ? (label+' entra en ALTO NIVEL.') : (label+' nivel normalizado.'),
-      nivel==='normal' ? 'info' : 'cause');
+      nivel==='normal' ? 'restore' : 'cause');
     if(nivel==='normal'){
       state.causas.filter(c=>c.linkedEquipoId===id && (c.linkedCondition==='bajo'||c.linkedCondition==='alto')).forEach(c=>{ c.active=false; });
       renderCausaButtons();
@@ -1415,31 +1432,62 @@
   function checkFTSensors(p){
     [p.from, p.to].forEach(id=>{
       const eq = getEquipo(id);
-      if(!eq || eq.tipo!=='transmisor_flujo') return;
+      if(!eq || (eq.tipo!=='transmisor_flujo' && eq.tipo!=='horno')) return;
 
-      // Buscar TODOS los caños conectados al transmisor
+      // Buscar TODOS los caños conectados al transmisor/horno
       const connectedPipes = state.canios.filter(pp => pp.from===id || pp.to===id);
       if(connectedPipes.length === 0) return;
 
       // Verificar si TODOS los caños tienen bajo caudal (noflow o transition)
       const allLowFlow = connectedPipes.every(pp => pp.state === 'noflow' || pp.state === 'transition');
-      const anyFlowing = connectedPipes.some(pp => pp.state === 'flow');
+      const allFlowing = connectedPipes.every(pp => pp.state === 'flow');
+      const anyLowFlow = connectedPipes.some(pp => pp.state === 'noflow' || pp.state === 'transition');
 
-      const causa = state.causas.find(c=>c.linkedEquipoId===id);
+      // Comportamiento simétrico:
+      // - Si un lado pierde flujo, el otro lado también lo pierde
+      // - Solo cuando ambos lados están sin flujo, si uno recupera, el otro recupera
 
-      if(allLowFlow && eq.state.ok){
-        // TODOS los caños tienen bajo caudal -> activar alarma
-        if(causa && !causa.active){
-          toggleCausa(causa.id); // ya loguea "activada" por su cuenta
-        } else if(!causa){
-          setFlowMeterState(id, false);
+      if(eq.tipo === 'transmisor_flujo'){
+        const causa = state.causas.find(c=>c.linkedEquipoId===id);
+
+        if(anyLowFlow && eq.state.ok){
+          // Al menos UN lado sin flujo -> activar alarma y cortar el otro lado
+          if(causa && !causa.active){
+            nextCascadeLevel();
+            toggleCausa(causa.id, new Set(), false);
+          } else if(!causa){
+            setFlowMeterState(id, false);
+          }
+          // Propagar sin flujo a todos los caños conectados
+          connectedPipes.forEach(pp => {
+            if(pp.state === 'flow'){
+              propagateNoFlow(pp.id, new Set());
+            }
+          });
+        } else if(allFlowing && !eq.state.ok){
+          // TODOS los lados tienen flujo -> normalizar
+          if(causa && causa.active){
+            toggleCausa(causa.id, new Set(), false);
+          } else if(!causa){
+            setFlowMeterState(id, true);
+          }
         }
-      } else if(anyFlowing && !eq.state.ok){
-        // Al menos UN caño tiene flujo -> normalizar
-        if(causa && causa.active){
-          toggleCausa(causa.id);
-        } else if(!causa){
-          setFlowMeterState(id, true);
+      } else if(eq.tipo === 'horno'){
+        // Mismo comportamiento para el horno
+        if(anyLowFlow){
+          // Si un lado pierde flujo, propagar al otro
+          connectedPipes.forEach(pp => {
+            if(pp.state === 'flow'){
+              propagateNoFlow(pp.id, new Set(), cascadeLevel);
+            }
+          });
+        } else if(allFlowing){
+          // Si ambos lados recuperan flujo, propagar
+          connectedPipes.forEach(pp => {
+            if(pp.state !== 'flow'){
+              propagateFlow(pp.id, new Set());
+            }
+          });
         }
       }
     });
@@ -1484,6 +1532,15 @@
       // corta la entrada, el nivel cae de a poco pero la salida NO pierde caudal
       // automáticamente por eso. Por eso la cascada de "sin caudal" no los atraviesa.
       if(downstream && !('nivel' in downstream.state)){
+        // Si el downstream es un transmisor de flujo, disparar cascada
+        if(downstream.tipo==='transmisor_flujo'){
+          const causa = state.causas.find(c=>c.linkedEquipoId===downstream.id);
+          if(causa && !causa.active){
+            // Nueva causa en cascada: incrementar nivel
+            nextCascadeLevel();
+            toggleCausa(causa.id, visited, false);
+          }
+        }
         state.canios.filter(pp=>pp.from===downstream.id).forEach(pp=> propagateNoFlow(pp.id, visited));
       }
     },TRANSITION_MS);
@@ -1532,7 +1589,7 @@
       const trippedPos = (eq.failMode==='abre') ? 'open' : 'closed';
       if(eq.state.estado === trippedPos) return; // ya está en la posición de falla
       setValveState(efectoId, trippedPos);
-      log(labelOf(efectoId)+(trippedPos==='closed'?' cerrada':' abierta')+' por trip.','cause');
+      log(labelOf(efectoId)+(trippedPos==='closed'?' cerrada':' abierta')+' por trip.','effect');
       if(trippedPos==='closed') cutEfectoFlow(efectoId, visited);
       else restoreAdjacent(efectoId);
       updateEffectsAvailability();
@@ -1540,7 +1597,7 @@
     }
     if((eq.tipo==='bomba'||eq.tipo==='compresor'||eq.tipo==='horno') && eq.state.run){
       setEquipoRunState(efectoId,false);
-      log(labelOf(efectoId)+' '+(eq.tipo==='horno'?'apagado':'detenida')+' por trip.','cause');
+      log(labelOf(efectoId)+' '+(eq.tipo==='horno'?'apagado':'detenida')+' por trip.','effect');
       // El horno no corta caudal al apagarse (por definición): no afecta a los caños vecinos.
       if(TYPE_DEFS[eq.tipo].blocksFlow) cutEfectoFlow(efectoId, visited);
       updateEffectsAvailability();
@@ -1563,11 +1620,17 @@
   // Punto único para activar/desactivar cualquier causa (esté o no vinculada a un
   // equipo del diagrama). Lo usan tanto el click en el diagrama como la botonera
   // de abajo y la cascada automática de los transmisores FT.
-  function toggleCausa(causaId, visited){
+  function toggleCausa(causaId, visited, isManual){
     const c = getCausa(causaId);
     if(!c) return;
     const activating = !c.active;
     c.active = activating;
+
+    // Si es manual (primera causa), resetear al nivel 1
+    if(isManual === true){
+      cascadeLevel = 1;
+    }
+
     if(c.linkedEquipoId){
       const eq = getEquipo(c.linkedEquipoId);
       if(eq){
@@ -1580,8 +1643,12 @@
       }
     }
     const label = causaLabel(c);
-    log(activating ? (label+' activada.') : (label+' normalizada.'), activating?'cause':'info');
-    if(activating) fireCausa(causaId, visited);
+    log(activating ? (label+' activada.') : (label+' normalizada.'), activating?'cause':'restore');
+    if(activating){
+      // Incrementar nivel: ahora vienen los efectos
+      nextCascadeLevel();
+      fireCausa(causaId, visited);
+    }
 
     // Actualizar disponibilidad de todos los efectos
     updateEffectsAvailability();
@@ -1663,7 +1730,7 @@
     if(cat==='causa'){
       if(eq.tipo==='transmisor' || eq.tipo==='transmisor_flujo'){
         const causa = state.causas.find(c=>c.linkedEquipoId===eq.id);
-        if(causa) toggleCausa(causa.id);
+        if(causa) toggleCausa(causa.id, new Set(), true);
       }
       // Los recipientes con nivel (tanque/separador) son automáticos según el
       // balance de caudal: el click sobre ellos no dispara nada por sí solo.
@@ -1681,8 +1748,9 @@
 
     if(eq.tipo==='valvula'){
       const closing = eq.state.estado==='open';
+      const restoring = isInFailPosition && !closing; // Es reposición si estaba en posición de falla y ahora se normaliza
       setValveState(eq.id, closing?'closed':'open');
-      log('Forzado manual: '+labelOf(eq.id)+(closing?' cerrada.':' abierta.'),'cause');
+      log((restoring?'Reponer: ':'Forzado manual: ')+labelOf(eq.id)+(closing?' cerrada.':' abierta.'), restoring?'restore':'cause');
       if(!closing) trippedEffects.delete(eq.id); // Si se abre/arranca, ya no está tripeado
       if(TYPE_DEFS[eq.tipo].blocksFlow){
         if(closing) cutEfectoFlow(eq.id);
@@ -1690,8 +1758,9 @@
       }
     } else if(eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno'){
       const stopping = eq.state.run;
+      const restoring = isInFailPosition && !stopping; // Es reposición si estaba detenido y ahora arranca
       setEquipoRunState(eq.id, !stopping);
-      log('Forzado manual: '+labelOf(eq.id)+(stopping?(eq.tipo==='horno'?' apagado.':' detenida.'):(eq.tipo==='horno'?' encendido.':' en marcha.')),'cause');
+      log((restoring?'Reponer: ':'Forzado manual: ')+labelOf(eq.id)+(stopping?(eq.tipo==='horno'?' apagado.':' detenida.'):(eq.tipo==='horno'?' encendido.':' en marcha.')), restoring?'restore':'cause');
       if(!stopping) trippedEffects.delete(eq.id); // Si se arranca, ya no está tripeado
       // El horno no corta ni restablece caudal en los caños vecinos (por definición).
       if(TYPE_DEFS[eq.tipo].blocksFlow){
@@ -1710,6 +1779,7 @@
     Object.keys(levelDriftTimers).forEach(id=>clearTimeout(levelDriftTimers[id]));
     for(const k in levelDriftTimers) delete levelDriftTimers[k];
     trippedEffects.clear(); // Limpiar registro de efectos tripeados
+    resetLog(); // Reiniciar contador de eventos
     state.equipos.forEach(eq=>{
       eq.state = JSON.parse(JSON.stringify(TYPE_DEFS[eq.tipo].defaultState));
       eq.state.ready = false; // Inicializar estado ready
@@ -1942,7 +2012,7 @@
       btn.className = 'causa-btn' + (c.active ? ' active' : '');
       btn.textContent = causaLabel(c);
       btn.title = 'Activar/desactivar esta causa';
-      btn.addEventListener('click', ()=> toggleCausa(c.id));
+      btn.addEventListener('click', ()=> toggleCausa(c.id, new Set(), true));
       bar.appendChild(btn);
     });
   }
