@@ -89,18 +89,18 @@
   .tank-badge.normal{fill:#1f7a3f;} .tank-badge.bajo{fill:var(--red);} .tank-badge.alto{fill:#a15c00;}
 
   .pump-body{fill:var(--equip-fill);transition:stroke .4s ease, fill .4s ease;}
-  .pump-body.run{stroke:var(--green);} .pump-body.stop{stroke:var(--red);fill:var(--tint-red);}
+  .pump-body.run{stroke:var(--green);} .pump-body.stop{stroke:var(--red);fill:var(--tint-red);} .pump-body.ready{stroke:var(--orange);fill:var(--tint-orange);}
   .pump-blade{transform-origin:center;transition:opacity .3s;}
-  .pump-blade.run{opacity:1;} .pump-blade.stop{opacity:.3;}
+  .pump-blade.run{opacity:1;} .pump-blade.stop{opacity:.3;} .pump-blade.ready{opacity:.3;}
   @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
   .pump-badge{font-size:10px;font-weight:700;font-family:inherit;transition:fill .4s ease;}
-  .pump-badge.run{fill:#1f7a3f;} .pump-badge.stop{fill:var(--red);}
+  .pump-badge.run{fill:#1f7a3f;} .pump-badge.stop{fill:var(--red);} .pump-badge.ready{fill:#a15c00;}
 
   .valve-tri{transition:fill .4s ease;stroke:var(--equip-line);stroke-width:2;}
-  .valve-tri.open{fill:var(--tint-green);} .valve-tri.closing{fill:var(--tint-orange);} .valve-tri.closed{fill:var(--tint-red);}
+  .valve-tri.open{fill:var(--tint-green);} .valve-tri.closing{fill:var(--tint-orange);} .valve-tri.closed{fill:var(--tint-red);} .valve-tri.ready{fill:var(--tint-orange);}
   .valve-outline{fill:none;stroke:var(--equip-line);stroke-width:2;}
   .valve-badge{font-size:10px;font-weight:700;font-family:inherit;transition:fill .4s ease;}
-  .valve-badge.open{fill:#1f7a3f;} .valve-badge.closing{fill:#a15c00;} .valve-badge.closed{fill:var(--red);}
+  .valve-badge.open{fill:#1f7a3f;} .valve-badge.closing{fill:#a15c00;} .valve-badge.closed{fill:var(--red);} .valve-badge.ready{fill:#a15c00;}
 
   .fm-circle{fill:var(--equip-fill);stroke:var(--equip-line);stroke-width:2;transition:stroke .4s ease,fill .4s ease;}
   .fm-circle.low{stroke:var(--red);fill:var(--tint-red);} .fm-circle.ok{stroke:var(--green);}
@@ -346,6 +346,7 @@
       <div class="legend-row"><span class="swatch orange"></span> Caño en transición</div>
       <div class="legend-row"><span class="swatch red"></span> Caño sin caudal</div>
       <div class="legend-row"><span class="swatch dot-green"></span> Equipo normal / válvula abierta</div>
+      <div class="legend-row" style="align-items:center;"><div style="width:10px;height:10px;border-radius:50%;background:var(--orange);flex:none;"></div> Efecto disponible para normalizar</div>
       <div class="legend-row"><span class="swatch dot-red"></span> Equipo detenido / válvula cerrada</div>
     </div>
 
@@ -505,13 +506,15 @@
     bomba: { name:'Bomba', category:'efecto', w:56, h:56, blocksFlow:true, defaultState:{run:true},
       render(g,eq){
         const run = eq.state.run;
-        el('circle',{id:eq.id+'-body',class:'pump-body '+(run?'run':'stop'),cx:28,cy:28,r:26,'stroke-width':3},g);
+        const ready = eq.state.ready || false;
+        const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
+        el('circle',{id:eq.id+'-body',class:'pump-body '+stateClass,cx:28,cy:28,r:26,'stroke-width':3},g);
         el('rect',{x:10,y:54,width:36,height:6,fill:'none',stroke:'var(--equip-line)','stroke-width':2},g);
-        el('polygon',{id:eq.id+'-blade',class:'pump-blade '+(run?'run':'stop'),points:'18,14 18,42 42,28',
+        el('polygon',{id:eq.id+'-blade',class:'pump-blade '+stateClass,points:'18,14 18,42 42,28',
           fill:'var(--equip-line)'},g);
         el('text',{id:eq.id+'-label',x:28,y:76,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+(run?'run':'stop'),x:28,y:90,'text-anchor':'middle'},g);
-        b.textContent = run?'EN MARCHA':'DETENIDA';
+        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+stateClass,x:28,y:90,'text-anchor':'middle'},g);
+        b.textContent = run?'EN MARCHA':(ready?'DISPONIBLE':'DETENIDA');
         el('rect',{class:'selection-highlight',x:-6,y:-6,width:68,height:68,rx:8},g);
       }},
     separador: { name:'Separador', category:'causa', w:110, h:46, defaultState:{nivel:'normal'},
@@ -574,37 +577,43 @@
     valvula: { name:'Válvula', category:'efecto', w:32, h:28, blocksFlow:true, defaultState:{estado:'open'},
       render(g,eq){
         const st = eq.state.estado;
+        const ready = eq.state.ready || false;
+        const displayState = (st==='closed' && ready) ? 'ready' : st;
         el('text',{id:eq.id+'-failmode',x:16,y:-8,'text-anchor':'middle','font-size':10,'font-weight':'700',
           fill:'var(--equip-line)'},g).textContent = eq.failMode==='abre'?'FO':'FC';
-        el('polygon',{id:eq.id+'-triL',class:'valve-tri '+st,points:'0,0 0,28 16,14'},g);
-        el('polygon',{id:eq.id+'-triR',class:'valve-tri '+st,points:'32,0 32,28 16,14'},g);
+        el('polygon',{id:eq.id+'-triL',class:'valve-tri '+displayState,points:'0,0 0,28 16,14'},g);
+        el('polygon',{id:eq.id+'-triR',class:'valve-tri '+displayState,points:'32,0 32,28 16,14'},g);
         el('line',{class:'valve-outline',x1:0,y1:0,x2:0,y2:28},g);
         el('line',{class:'valve-outline',x1:32,y1:0,x2:32,y2:28},g);
         el('text',{id:eq.id+'-label',x:16,y:44,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'valve-badge '+st,x:16,y:57,'text-anchor':'middle'},g);
-        b.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':'CERRADA';
+        const b = el('text',{id:eq.id+'-badge',class:'valve-badge '+displayState,x:16,y:57,'text-anchor':'middle'},g);
+        b.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':(ready?'DISPONIBLE':'CERRADA');
         el('rect',{class:'selection-highlight',x:-6,y:-14,width:44,height:78,rx:6},g);
       }},
     compresor: { name:'Compresor', category:'efecto', w:70, h:56, blocksFlow:true, defaultState:{run:true},
       render(g,eq){
         const run = eq.state.run!==false;
-        el('polygon',{id:eq.id+'-body',class:'pump-body '+(run?'run':'stop'),
+        const ready = eq.state.ready || false;
+        const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
+        el('polygon',{id:eq.id+'-body',class:'pump-body '+stateClass,
           points:'0,0 0,40 70,30 70,10','stroke-width':3},g);
         el('text',{id:eq.id+'-label',x:35,y:-6,'text-anchor':'middle',class:'equip-label'},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+(run?'run':'stop'),x:35,y:56,'text-anchor':'middle','font-size':10},g);
-        b.textContent = run?'EN MARCHA':'DETENIDA';
+        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+stateClass,x:35,y:56,'text-anchor':'middle','font-size':10},g);
+        b.textContent = run?'EN MARCHA':(ready?'DISPONIBLE':'DETENIDA');
         el('rect',{class:'selection-highlight',x:-5,y:-5,width:80,height:74,rx:6},g);
       }},
     horno: { name:'Horno', category:'efecto', w:60, h:96, blocksFlow:false, defaultState:{run:true},
       render(g,eq){
         const run = eq.state.run;
-        el('path',{id:eq.id+'-body',class:'pump-body '+(run?'run':'stop'),
+        const ready = eq.state.ready || false;
+        const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
+        el('path',{id:eq.id+'-body',class:'pump-body '+stateClass,
           d:'M26,0 L34,0 L34,10 L56,40 L56,74 L4,74 L4,40 L26,10 Z','stroke-width':3},g);
         el('path',{id:eq.id+'-flame',d:'M30 48 C22 60 20 68 30 76 C40 68 38 60 30 48 Z',
           fill: run?'var(--orange)':'var(--equip-line)', opacity: run?1:0.35},g);
         el('text',{id:eq.id+'-label',x:30,y:88,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+(run?'run':'stop'),x:30,y:102,'text-anchor':'middle'},g);
-        b.textContent = run?'ENCENDIDO':'APAGADO';
+        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+stateClass,x:30,y:102,'text-anchor':'middle'},g);
+        b.textContent = run?'ENCENDIDO':(ready?'DISPONIBLE':'APAGADO');
         el('rect',{class:'selection-highlight',x:-6,y:-6,width:72,height:118,rx:8},g);
       }},
     columna: { name:'Columna', category:'causa', w:55, h:150, defaultState:{},
@@ -1254,25 +1263,29 @@
   function setEquipoRunState(id, running){
     const eq=getEquipo(id); if(!eq) return false;
     eq.state.run = running;
+    const ready = eq.state.ready || false;
+    const stateClass = running ? 'run' : (ready ? 'ready' : 'stop');
     const body=document.getElementById(id+'-body'), badge=document.getElementById(id+'-badge');
     if(!body||!badge) return false;
-    body.classList.remove('run','stop'); body.classList.add(running?'run':'stop');
+    body.classList.remove('run','stop','ready'); body.classList.add(stateClass);
     const blade=document.getElementById(id+'-blade');
-    if(blade){ blade.classList.remove('run','stop'); blade.classList.add(running?'run':'stop'); }
+    if(blade){ blade.classList.remove('run','stop','ready'); blade.classList.add(stateClass); }
     const flame=document.getElementById(id+'-flame');
     if(flame){ flame.setAttribute('fill', running?'var(--orange)':'var(--equip-line)'); flame.setAttribute('opacity', running?'1':'0.35'); }
-    badge.classList.remove('run','stop'); badge.classList.add(running?'run':'stop');
-    badge.textContent = running ? (eq.tipo==='horno'?'ENCENDIDO':'EN MARCHA') : (eq.tipo==='horno'?'APAGADO':'DETENIDA');
+    badge.classList.remove('run','stop','ready'); badge.classList.add(stateClass);
+    badge.textContent = running ? (eq.tipo==='horno'?'ENCENDIDO':'EN MARCHA') : (ready?'DISPONIBLE':(eq.tipo==='horno'?'APAGADO':'DETENIDA'));
     return true;
   }
   function setValveState(id, st){
     const eq=getEquipo(id); if(!eq) return false;
     eq.state.estado = st;
+    const ready = eq.state.ready || false;
+    const displayState = (st==='closed' && ready) ? 'ready' : st;
     const l=document.getElementById(id+'-triL'), r=document.getElementById(id+'-triR'), badge=document.getElementById(id+'-badge');
     if(!l||!r||!badge) return false;
-    [l,r].forEach(x=>{ x.classList.remove('open','closing','closed'); x.classList.add(st); });
-    badge.classList.remove('open','closing','closed'); badge.classList.add(st);
-    badge.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':'CERRADA';
+    [l,r].forEach(x=>{ x.classList.remove('open','closing','closed','ready'); x.classList.add(displayState); });
+    badge.classList.remove('open','closing','closed','ready'); badge.classList.add(displayState);
+    badge.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':(ready?'DISPONIBLE':'CERRADA');
     return true;
   }
   function setFlowMeterState(id, ok){
@@ -1293,38 +1306,34 @@
     checkLevelDrift(p.from);
     checkLevelDrift(p.to);
     checkFTSensors(p);
+    mirrorFTFlow(p);
     return true;
+  }
+
+  // ---- El FT es solo un instrumento en línea: si un lado se queda sin caudal, el otro
+  // lado tampoco puede tenerlo (es la misma línea física). Da igual cuál sea "entrada" y
+  // cuál "salida" — se replica en ambos sentidos por igual.
+  function mirrorFTFlow(p){
+    if(p.state!=='noflow') return;
+    [p.from, p.to].forEach(id=>{
+      const eq = getEquipo(id);
+      if(!eq || eq.tipo!=='transmisor_flujo') return;
+      state.canios
+        .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='noflow')
+        .forEach(op=> propagateNoFlow(op.id));
+    });
   }
 
   // ---- Nivel de recipientes: sube/baja según el balance de caudal de entrada/salida ----
   const LEVEL_DRIFT_MS = 2500;
   const levelDriftTimers = {};
   function checkLevelDrift(vesselId){
-    const eq = getEquipo(vesselId);
-    if(!eq || !('nivel' in eq.state)) return;
-    const inlet = state.canios.filter(p=>p.to===vesselId);
-    const outlet = state.canios.filter(p=>p.from===vesselId);
-    const inletFlowing = inlet.length===0 || inlet.some(p=>p.state==='flow');
-    const outletFlowing = outlet.length===0 || outlet.some(p=>p.state==='flow');
-    let target = 'normal';
-    if(inletFlowing && !outletFlowing) target = 'alto';
-    else if(!inletFlowing && outletFlowing) target = 'bajo';
-
-    const existing = levelDriftTimers[vesselId];
-    if(existing && existing.target === target) return; // ya va camino a ese mismo destino, no reiniciar la cuenta
-    if(existing){ clearTimeout(existing.timeoutId); delete levelDriftTimers[vesselId]; }
-
-    if(target === eq.state.nivel) return;
-
-    if(target === 'normal'){
-      setVesselLevel(vesselId, 'normal');
-      return;
-    }
-    const timeoutId = setTimeout(()=>{
-      delete levelDriftTimers[vesselId];
-      setVesselLevel(vesselId, target);
-    }, LEVEL_DRIFT_MS);
-    levelDriftTimers[vesselId] = {timeoutId, target};
+    // Desactivado a pedido: el nivel de tanques/separadores/acumuladores ya NO cambia
+    // solo porque se corte o restablezca el caudal de entrada/salida. El único disparador
+    // válido para un trip de nivel (alto o bajo) es la activación manual de la causa
+    // (botonera de causas o click en el diagrama). Se deja la función vacía en vez de
+    // borrar el llamado desde setPipeState, por si en el futuro se quiere reactivar.
+    return;
   }
   function setVesselLevel(id, nivel){
     const eq = getEquipo(id);
@@ -1346,24 +1355,36 @@
     }
   }
 
-  // ---- FT: transmisor de caudal, se activa solo si un caño conectado pierde caudal ----
+  // ---- FT: transmisor de caudal, se activa solo si TODOS los caños conectados tienen bajo caudal ----
   function checkFTSensors(p){
     [p.from, p.to].forEach(id=>{
       const eq = getEquipo(id);
       if(!eq || eq.tipo!=='transmisor_flujo') return;
+
+      // Buscar TODOS los caños conectados al transmisor
+      const connectedPipes = state.canios.filter(pp => pp.from===id || pp.to===id);
+      if(connectedPipes.length === 0) return;
+
+      // Verificar si TODOS los caños tienen bajo caudal (noflow o transition)
+      const allLowFlow = connectedPipes.every(pp => pp.state === 'noflow' || pp.state === 'transition');
+      const anyFlowing = connectedPipes.some(pp => pp.state === 'flow');
+
       const causa = state.causas.find(c=>c.linkedEquipoId===id);
-      if(p.state==='noflow' && eq.state.ok){
+
+      if(allLowFlow && eq.state.ok){
+        // TODOS los caños tienen bajo caudal -> activar alarma
         if(causa && !causa.active){
-          log(causaLabel(causa)+' detecta bajo caudal.','effect');
+          log(causaLabel(causa)+' detecta bajo caudal en todos los lados.','effect');
           toggleCausa(causa.id);
         } else if(!causa){
           setFlowMeterState(id, false);
         }
-      } else if(p.state==='flow' && !eq.state.ok){
-        const stillLow = state.canios.some(pp=>(pp.from===id||pp.to===id) && pp.state!=='flow');
-        if(!stillLow){
-          if(causa && causa.active) toggleCausa(causa.id);
-          else if(!causa) setFlowMeterState(id, true);
+      } else if(anyFlowing && !eq.state.ok){
+        // Al menos UN caño tiene flujo -> normalizar
+        if(causa && causa.active){
+          toggleCausa(causa.id);
+        } else if(!causa){
+          setFlowMeterState(id, true);
         }
       }
     });
@@ -1434,6 +1455,7 @@
       log(labelOf(efectoId)+(trippedPos==='closed'?' cerrada':' abierta')+' por trip.','cause');
       if(trippedPos==='closed') cutEfectoFlow(efectoId, visited);
       else restoreAdjacent(efectoId);
+      updateEffectsAvailability();
       return;
     }
     if((eq.tipo==='bomba'||eq.tipo==='compresor'||eq.tipo==='horno') && eq.state.run){
@@ -1441,6 +1463,7 @@
       log(labelOf(efectoId)+' '+(eq.tipo==='horno'?'apagado':'detenida')+' por trip.','cause');
       // El horno no corta caudal al apagarse (por definición): no afecta a los caños vecinos.
       if(TYPE_DEFS[eq.tipo].blocksFlow) cutEfectoFlow(efectoId, visited);
+      updateEffectsAvailability();
     }
   }
 
@@ -1449,8 +1472,11 @@
     const row = state.trips[causaId];
     if(!row) return;
     Object.keys(row).forEach(efId=>{
-      // Solo tripear si el valor es true (trip automático), no 'manual'
-      if(row[efId] === true) tripEfecto(efId, visited);
+      // Tripear tanto con trip automático (true) como con reposición manual ('manual')
+      // La diferencia está en si se puede normalizar después, no en si tripea o no
+      if(row[efId] === true || row[efId] === 'manual'){
+        tripEfecto(efId, visited);
+      }
     });
   }
 
@@ -1472,7 +1498,11 @@
     const label = causaLabel(c);
     log(activating ? (label+' activada.') : (label+' normalizada.'), activating?'cause':'info');
     if(activating) fireCausa(causaId, visited);
+
+    // Actualizar disponibilidad de todos los efectos
+    updateEffectsAvailability();
     renderCausaButtons();
+    render();
   }
 
   // Restablece manualmente los caños inmediatos de un efecto que se vuelve a abrir/arrancar
@@ -1481,30 +1511,62 @@
     state.canios.filter(p=>p.from===efectoId||p.to===efectoId).forEach(p=> setPipeState(p.id,'flow'));
   }
 
+  // Verifica si un efecto está disponible para normalizar
+  // Retorna true si:
+  // 1. Todas las causas activas tienen permiso manual (1), o
+  // 2. No hay causas activas que afecten este efecto
   function canManuallyRestore(efectoId){
-    // Verificar si el efecto puede ser repuesto manualmente
-    // 1. Si nunca fue tripeado, se puede operar libremente
+    // Si nunca fue tripeado, se puede operar libremente
     if(!trippedEffects.has(efectoId)) return true;
 
-    // 2. Si fue tripeado, verificar si tiene permiso manual (1) en la matriz
-    let hasManualPermission = false;
+    // Buscar todas las causas que afectan a este efecto
+    let hasActiveCausesWithTrip = false;
+    let allActiveCausesHaveManualPermission = true;
+
     state.causas.forEach(causa => {
-      if(state.trips[causa.id] && state.trips[causa.id][efectoId] === 'manual'){
-        hasManualPermission = true;
+      const tripValue = state.trips[causa.id] && state.trips[causa.id][efectoId];
+
+      // Si esta causa está activa y afecta al efecto
+      if(causa.active && (tripValue === true || tripValue === 'manual')){
+        hasActiveCausesWithTrip = true;
+
+        // Si tiene trip automático (no manual), no se puede restaurar
+        if(tripValue === true){
+          allActiveCausesHaveManualPermission = false;
+        }
       }
     });
 
-    if(hasManualPermission) return true;
+    // Si no hay causas activas que lo afecten, puede normalizarse
+    if(!hasActiveCausesWithTrip) return true;
 
-    // 3. Si no tiene permiso manual, verificar que no haya causas activas
-    let hasActiveCauses = false;
-    state.causas.forEach(causa => {
-      if(causa.active && state.trips[causa.id] && state.trips[causa.id][efectoId] === true){
-        hasActiveCauses = true;
+    // Si todas las causas activas tienen permiso manual (1), puede normalizarse
+    return allActiveCausesHaveManualPermission;
+  }
+
+  // Actualiza el estado visual de todos los efectos según su disponibilidad
+  function updateEffectsAvailability(){
+    state.equipos.forEach(eq => {
+      if(TYPE_DEFS[eq.tipo].category !== 'efecto') return;
+
+      // Verificar si está tripeado
+      if(!trippedEffects.has(eq.id)){
+        eq.state.ready = false;
+        return;
       }
-    });
 
-    return !hasActiveCauses;
+      // Verificar si está en posición de falla
+      const isInFailPosition = (eq.tipo==='valvula' && ((eq.failMode==='abre' && eq.state.estado==='open') || (eq.failMode==='cierra' && eq.state.estado==='closed'))) ||
+                               ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && !eq.state.run);
+
+      if(!isInFailPosition){
+        eq.state.ready = false;
+        return;
+      }
+
+      // Está tripeado y en posición de falla: verificar disponibilidad
+      eq.state.ready = canManuallyRestore(eq.id);
+    });
   }
 
   function handleSimClick(eq){
@@ -1528,7 +1590,7 @@
                              ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && !eq.state.run);
 
     if(isInFailPosition && !canManuallyRestore(eq.id)){
-      log('No se puede reponer '+labelOf(eq.id)+': falta permiso manual (1) en la matriz o hay causas activas.','info');
+      log('No se puede reponer '+labelOf(eq.id)+': todas las causas deben desactivarse o tener permiso manual (1).','info');
       return;
     }
 
@@ -1552,6 +1614,10 @@
         else restoreAdjacent(eq.id);
       }
     }
+
+    // Actualizar disponibilidad de todos los efectos
+    updateEffectsAvailability();
+    render();
   }
 
   function resetPlant(){
@@ -1561,6 +1627,7 @@
     trippedEffects.clear(); // Limpiar registro de efectos tripeados
     state.equipos.forEach(eq=>{
       eq.state = JSON.parse(JSON.stringify(TYPE_DEFS[eq.tipo].defaultState));
+      eq.state.ready = false; // Inicializar estado ready
       if(eq.tipo==='valvula'){
         eq.state.estado = (eq.failMode==='abre') ? 'closed' : 'open';
       }
@@ -1574,6 +1641,7 @@
     });
     state.causas.forEach(c=>{ c.active=false; });
     logList.innerHTML='';
+    updateEffectsAvailability(); // Actualizar disponibilidad
     render();
     log('Planta reseteada a condición normal de operación.','info');
   }
