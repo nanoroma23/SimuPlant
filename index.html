@@ -96,8 +96,11 @@
   .pump-badge{font-size:10px;font-weight:700;font-family:inherit;transition:fill .4s ease;}
   .pump-badge.run{fill:#1f7a3f;} .pump-badge.stop{fill:var(--red);} .pump-badge.ready{fill:#a15c00;}
 
-  .valve-tri{transition:fill .4s ease;stroke:var(--equip-line);stroke-width:2;}
-  .valve-tri.open{fill:var(--tint-green);} .valve-tri.closing{fill:var(--tint-orange);} .valve-tri.closed{fill:var(--tint-red);} .valve-tri.ready{fill:var(--tint-orange);}
+  .valve-tri{transition:fill .4s ease, stroke .4s ease;stroke:var(--equip-line);stroke-width:2;}
+  .valve-tri.open{fill:var(--tint-green);stroke:var(--green);stroke-width:3;}
+  .valve-tri.closing{fill:var(--tint-orange);stroke:var(--orange);stroke-width:3;}
+  .valve-tri.closed{fill:var(--tint-red);stroke:var(--red);stroke-width:3;}
+  .valve-tri.ready{fill:var(--tint-orange);stroke:var(--orange);stroke-width:3;}
   .valve-outline{fill:none;stroke:var(--equip-line);stroke-width:2;}
   .valve-badge{font-size:10px;font-weight:700;font-family:inherit;transition:fill .4s ease;}
   .valve-badge.open{fill:#1f7a3f;} .valve-badge.closing{fill:#a15c00;} .valve-badge.closed{fill:var(--red);} .valve-badge.ready{fill:#a15c00;}
@@ -327,9 +330,12 @@
 
   <aside>
     <div class="panel log-panel side-fill" id="logBox">
-      <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
         <h3 style="margin:0;">Registro de eventos</h3>
-        <button id="btnExpandLog" title="Expandir registro" style="padding:4px 8px;font-size:12px;">⤢</button>
+        <div style="display:flex;gap:4px;">
+          <button id="btnCopyLog" title="Copiar registro" style="padding:4px 8px;font-size:12px;">📋</button>
+          <button id="btnExpandLog" title="Expandir registro" style="padding:4px 8px;font-size:12px;">⤢</button>
+        </div>
       </div>
       <div class="log-list" id="logList"></div>
     </div>
@@ -389,7 +395,10 @@
   <div class="modal-box" style="width:600px;max-width:90vw;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
       <p class="hint" style="margin:0;"><b>Registro de eventos</b></p>
-      <button id="btnCloseExpandLog">Cerrar</button>
+      <div style="display:flex;gap:6px;">
+        <button id="btnCopyLogExpanded">📋 Copiar</button>
+        <button id="btnCloseExpandLog">Cerrar</button>
+      </div>
     </div>
     <div class="log-list" id="logListExpanded" style="max-height:60vh;"></div>
   </div>
@@ -565,12 +574,20 @@
         el('rect',{id:eq.id+'-level',class:'tank-level-fill '+nivel,x:0,width:110,
           'clip-path':'url(#'+clipId+')', y: lg.y, height: lg.height},g);
         el('rect',{class:'equip-outline',x:0,y:0,width:110,height:46,rx:22},g);
-        // Bota hacia abajo (solo contorno, mitad inferior del óvalo)
-        el('line',{class:'equip-outline',x1:65,y1:46,x2:65,y2:60},g);
-        el('line',{class:'equip-outline',x1:90,y1:46,x2:90,y2:60},g);
-        el('path',{class:'equip-outline',fill:'none',d:'M65,60 A12.5,8 0 0,0 90,60'},g);
         const b = el('text',{id:eq.id+'-badge',class:'tank-badge '+nivel,x:55,y:27,'text-anchor':'middle'},g);
         b.textContent = nivelBadgeText(nivel);
+        // Bota hacia abajo: recipiente chico propio, con su propio relleno de nivel.
+        el('rect',{class:'tank-level-bg',x:55,y:46,width:45,height:30,rx:15},g);
+        const clipIdBota = eq.id+'-clipBota';
+        const clipBota = el('clipPath',{id:clipIdBota},g);
+        el('rect',{x:55,y:46,width:45,height:30,rx:15},clipBota);
+        const nivelBota = eq.state.nivelBota || 'normal';
+        const lgBota = levelGeom(30, nivelBota);
+        el('rect',{id:eq.id+'-levelBota',class:'tank-level-fill '+nivelBota,x:55,width:45,
+          'clip-path':'url(#'+clipIdBota+')', y: 46+lgBota.y, height: lgBota.height},g);
+        el('rect',{class:'equip-outline',x:55,y:46,width:45,height:30,rx:15},g);
+        const bBota = el('text',{id:eq.id+'-badgeBota',class:'tank-badge '+nivelBota,x:77.5,y:65,'text-anchor':'middle','font-size':8.5},g);
+        bBota.textContent = nivelBadgeText(nivelBota);
         el('rect',{class:'selection-highlight',x:-5,y:-5,width:140,height:86,rx:10},g);
       }},
     transmisor: { name:'Transmisor', category:'causa', w:35, h:35, defaultState:{ok:true},
@@ -1279,6 +1296,20 @@
     level.setAttribute('y', lg.y); level.setAttribute('height', lg.height);
     return true;
   }
+  // Nivel de la "bota" del acumulador: es un indicador independiente del nivel del
+  // cuerpo principal, con su propio elemento visual (-levelBota / -badgeBota).
+  function setAcumuladorBotaState(id, nivel){
+    const eq=getEquipo(id); if(!eq) return false;
+    eq.state.nivelBota = nivel;
+    const level=document.getElementById(id+'-levelBota'), badge=document.getElementById(id+'-badgeBota');
+    if(!level||!badge) return false;
+    const lg = levelGeom(30, nivel);
+    level.classList.remove('normal','bajo','alto'); level.classList.add(nivel);
+    badge.classList.remove('normal','bajo','alto'); badge.classList.add(nivel);
+    badge.textContent = nivelBadgeText(nivel);
+    level.setAttribute('y', 46+lg.y); level.setAttribute('height', lg.height);
+    return true;
+  }
   function setEquipoRunState(id, running){
     const eq=getEquipo(id); if(!eq) return false;
     eq.state.run = running;
@@ -1341,10 +1372,10 @@
         state.canios
           .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='noflow')
           .forEach(op=> propagateNoFlow(op.id));
-      } else { // 'flow': se restablece de un lado, se replica del otro
+      } else { // 'flow': se restablece de un lado, se replica del otro y sigue de largo
         state.canios
           .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='flow')
-          .forEach(op=> setPipeState(op.id, 'flow'));
+          .forEach(op=> propagateFlow(op.id));
       }
     });
   }
@@ -1426,6 +1457,15 @@
   function schedule(fn,delay){ pending.push(setTimeout(fn,delay)); }
   function clearPending(){ pending.forEach(id=>clearTimeout(id)); pending=[]; }
 
+  // ¿Este efecto bloquea el paso de caudal en su estado actual? (para saber si al
+  // restablecer flujo aguas arriba, corresponde seguir empujándolo hacia adelante)
+  function isEffectBlocking(eq){
+    if(!eq) return false;
+    if(eq.tipo==='valvula') return eq.state.estado!=='open';
+    if(eq.tipo==='bomba' || eq.tipo==='compresor') return !eq.state.run;
+    return false; // el horno nunca bloquea; los recipientes con nivel no entran acá
+  }
+
   // Propaga "sin caudal" aguas abajo desde un caño, atravesando equipos pasivos
   // y disparando cualquier transmisor que detecte la caída (cascada indirecta).
   function propagateNoFlow(pipeId, visited){
@@ -1447,6 +1487,23 @@
         state.canios.filter(pp=>pp.from===downstream.id).forEach(pp=> propagateNoFlow(pp.id, visited));
       }
     },TRANSITION_MS);
+  }
+
+  // Simétrica a propagateNoFlow, pero para restablecer caudal hacia adelante: la usan
+  // la reapertura/rearranque manual de un efecto y el mirror de los caudalímetros FT,
+  // para que equipos "de paso" (como el horno) no se queden con un lado sin caudal
+  // cuando el otro ya se recuperó.
+  function propagateFlow(pipeId, visited){
+    visited = visited || new Set();
+    if(visited.has(pipeId)) return;
+    visited.add(pipeId);
+    const p = getPipe(pipeId);
+    if(!p || p.state==='flow') return;
+    setPipeState(pipeId,'flow');
+    const downstream = getEquipo(p.to);
+    if(downstream && !('nivel' in downstream.state) && !isEffectBlocking(downstream)){
+      state.canios.filter(pp=>pp.from===downstream.id).forEach(pp=> propagateFlow(pp.id, visited));
+    }
   }
 
   // Corta el caudal alrededor de un efecto: el caño anterior pierde caudal en un solo
@@ -1515,6 +1572,10 @@
       const eq = getEquipo(c.linkedEquipoId);
       if(eq){
         if(eq.tipo==='transmisor' || eq.tipo==='transmisor_flujo') setFlowMeterState(eq.id, !activating);
+        else if(c.linkedCondition==='bajoBota' || c.linkedCondition==='altoBota'){
+          const nivelBota = c.linkedCondition==='bajoBota' ? 'bajo' : 'alto';
+          setAcumuladorBotaState(eq.id, activating ? nivelBota : 'normal');
+        }
         else if(c.linkedCondition) setTankState(eq.id, activating ? c.linkedCondition : 'normal');
       }
     }
@@ -1531,7 +1592,9 @@
   // Restablece manualmente los caños inmediatos de un efecto que se vuelve a abrir/arrancar
   // (no revierte una cascada completa — para eso está el botón Reset).
   function restoreAdjacent(efectoId){
-    state.canios.filter(p=>p.from===efectoId||p.to===efectoId).forEach(p=> setPipeState(p.id,'flow'));
+    const prev = state.canios.find(p=>p.to===efectoId);
+    if(prev) setPipeState(prev.id, 'flow');
+    state.canios.filter(p=>p.from===efectoId).forEach(p=> propagateFlow(p.id));
   }
 
   // Verifica si un efecto está disponible para normalizar
@@ -2049,7 +2112,6 @@
       btnSave.disabled = true;
       btnSave.title = 'No tenés permisos para guardar cambios';
       readonlyIndicator.style.display = 'block';
-      log('Proyecto abierto en modo solo lectura.', 'info');
     } else {
       btnEdit.disabled = false;
       btnEdit.title = 'Modo edición';
@@ -2290,7 +2352,6 @@
     currentProjectName = name;
     markAsSaved();
     updateProjectTitle();
-    log('Proyecto "'+name+'" guardado en la nube.', 'info');
   }
 
   function setupNewProjectButton(btnId, modalId){
@@ -2343,7 +2404,6 @@
         const writable = await handle.createWritable();
         await writable.write(json);
         await writable.close();
-        log('Proyecto exportado como ' + defaultName, 'info');
       } catch(err){
         if(err.name !== 'AbortError'){
           console.error('Error al exportar:', err);
@@ -2362,7 +2422,6 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        log('Proyecto exportado como ' + nombre + '.json', 'info');
       });
     }
   });
@@ -2409,7 +2468,6 @@
           } else {
             // Cargar el proyecto recién guardado
             loadStateIntoApp(parsed, result.data.id, projectName, result.data.owner);
-            log('Proyecto "' + projectName + '" importado y guardado en la nube.', 'info');
           }
 
           document.getElementById('inicioModal').style.display='none';
@@ -2434,6 +2492,30 @@
   document.getElementById('btnCloseExpandLog').addEventListener('click', ()=>{
     document.getElementById('logExpandedModal').style.display = 'none';
   });
+
+  function copyLogToClipboard(btn){
+    const text = Array.from(logList.children).map(el=>el.textContent).join('\n');
+    const done = ()=>{
+      const original = btn.textContent;
+      btn.textContent = '✓ Copiado';
+      setTimeout(()=>{ btn.textContent = original; }, 1500);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(()=>{
+        const ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); } catch(e){}
+        document.body.removeChild(ta);
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); done(); } catch(e){}
+      document.body.removeChild(ta);
+    }
+  }
+  document.getElementById('btnCopyLog').addEventListener('click', e=> copyLogToClipboard(e.currentTarget));
+  document.getElementById('btnCopyLogExpanded').addEventListener('click', e=> copyLogToClipboard(e.currentTarget));
 
   resetPlant();
 
