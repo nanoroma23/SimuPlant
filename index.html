@@ -66,7 +66,6 @@
   .pipe-hit{fill:none;stroke:transparent;stroke-width:16;pointer-events:stroke;}
   .pipe-arrow{fill:var(--pipe-idle);transition:fill .4s ease;}
   .pipe-group.flow .pipe-line{stroke:var(--green);} .pipe-group.flow .pipe-arrow{fill:var(--green);}
-  .pipe-group.transition .pipe-line{stroke:var(--orange);} .pipe-group.transition .pipe-arrow{fill:var(--orange);}
   .pipe-group.noflow .pipe-line{stroke:var(--red);} .pipe-group.noflow .pipe-arrow{fill:var(--red);}
   .pipe-group.selected .pipe-line{stroke-width:7;stroke-dasharray:3,3;}
   .pipe-group.editable .pipe-hit{cursor:pointer;}
@@ -210,7 +209,10 @@
     border:1px solid var(--border-panel);border-radius:6px;padding:5px 10px;font-size:12.5px;color:var(--text-light);
     box-shadow:0 2px 6px rgba(0,0,0,.35);}
   .transition-control input{width:44px;background:var(--bg-panel);border:1px solid var(--border-panel);
-    color:var(--text-light);border-radius:4px;padding:3px 4px;font-size:12.5px;text-align:center;}
+    color:var(--text-light);border-radius:4px;padding:3px 4px;font-size:12.5px;text-align:center;
+    -moz-appearance:textfield;appearance:textfield;}
+  .transition-control input::-webkit-outer-spin-button,
+  .transition-control input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 
   .float-editor{position:fixed;z-index:200;background:var(--bg-panel);border:1px solid var(--gray-4);
     border-radius:8px;padding:8px;display:flex;gap:6px;box-shadow:0 6px 20px rgba(0,0,0,.5);}
@@ -296,7 +298,7 @@
       <span id="projectTitle" class="project-title-display" style="display:none;"></span>
     </div>
     <div class="topbar-right">
-      <div class="transition-control" title="Tiempo de transición naranja → rojo en los caños">
+      <div class="transition-control" title="Tiempo entre cada paso de la cascada visual">
         <label for="transitionInput">Transición</label>
         <input type="number" id="transitionInput" min="1" max="15" step="1" value="5">
         <span>s</span>
@@ -477,7 +479,7 @@
 (function(){
   // ================= LOG =================
   const logList = document.getElementById('logList');
-  let cascadeLevel = 1;
+  let cascadeLevel = 0;
   function log(msg, type){
     const el=document.createElement('div');
     el.className='log-entry '+(type||'info');
@@ -497,10 +499,40 @@
     }
   }
   function resetLog(){
-    cascadeLevel = 1;
+    cascadeLevel = 0;
+    resetVisualClock();
   }
+  // nextCascadeLevel se llama una vez por cada nueva "ola" de la cascada (un causa→efecto
+  // nuevo). Además de subir el número del registro, empuja el reloj visual exactamente
+  // el tiempo de transición configurado, para que cada ola se vea ese tiempo después
+  // de la anterior — ni más rápido ni más lento que lo que el usuario configuró.
+  // nextCascadeLevel numera la próxima línea del registro (1,2,3,4...). El reloj
+  // visual (visualStepMs) es un asunto aparte: solo avanza cuando una causa
+  // dispara SUS PROPIOS efectos directos (ver el punto donde se llama fireCausa),
+  // no cuando simplemente se detecta/activa una causa nueva. Así, una causa que
+  // cae en cascada (ej. un FT que se activa por bajo caudal) se ve JUNTO con el
+  // trip que la disparó, y recién se separa una ola más cuando ESA causa dispara
+  // sus propios trips.
   function nextCascadeLevel(){
     cascadeLevel++;
+  }
+
+  // ---- Reloj visual: separa "cuándo se resuelve la lógica" de "cuándo se ve".
+  // La lógica (state, matriz, disponibilidad para reponer) sigue siendo instantánea
+  // y correcta; lo único que se demora es la actualización del dibujo. Se usa un
+  // tiempo OBJETIVO absoluto (desde que arrancó la cascada) en vez de un delay relativo,
+  // para que agendar una visual desde DENTRO de un setTimeout ya demorado no sume
+  // tiempos de más.
+  let cascadeStartTime = 0;
+  let visualStepMs = 0;
+  function scheduleVisual(fn){
+    const target = cascadeStartTime + visualStepMs;
+    const delay = Math.max(0, target - Date.now());
+    pending.push(setTimeout(fn, delay));
+  }
+  function resetVisualClock(){
+    cascadeStartTime = Date.now();
+    visualStepMs = 0;
   }
 
   // ================= SVG HELPERS =================
@@ -1278,6 +1310,7 @@
     const newEq = {id, tipo, x:120+Math.random()*400, y:200+Math.random()*140,
       label:'', state: JSON.parse(JSON.stringify(def.defaultState))};
     if(tipo==='valvula') newEq.failMode = 'cierra'; // falla-cierra por defecto (normal abierta)
+    newEq.revealedState = JSON.parse(JSON.stringify(newEq.state));
     state.equipos.push(newEq);
     if(tipo==='transmisor' || tipo==='transmisor_flujo'){
       state.causas.push({id, label:'', linkedEquipoId:id, active:false});
@@ -1305,16 +1338,21 @@
   });
 
   // ================= ESTADOS DE SIMULACIÓN =================
+  // En cada setter: el estado real (state.xxx) se actualiza YA, para que la lógica,
+  // la matriz y la disponibilidad de reposición sigan siendo instantáneas y correctas.
+  // Lo único que se demora con scheduleVisual es el dibujo (clases, texto, colores).
   function setTankState(id, nivel){
     const eq=getEquipo(id); if(!eq) return false;
     eq.state.nivel = nivel;
     const level=document.getElementById(id+'-level'), badge=document.getElementById(id+'-badge');
     if(!level||!badge) return false;
-    const lg = levelGeom(TYPE_DEFS[eq.tipo].h, nivel);
-    level.classList.remove('normal','bajo','alto'); level.classList.add(nivel);
-    badge.classList.remove('normal','bajo','alto'); badge.classList.add(nivel);
-    badge.textContent = nivelBadgeText(nivel);
-    level.setAttribute('y', lg.y); level.setAttribute('height', lg.height);
+    scheduleVisual(()=>{
+      const lg = levelGeom(TYPE_DEFS[eq.tipo].h, nivel);
+      level.classList.remove('normal','bajo','alto'); level.classList.add(nivel);
+      badge.classList.remove('normal','bajo','alto'); badge.classList.add(nivel);
+      badge.textContent = nivelBadgeText(nivel);
+      level.setAttribute('y', lg.y); level.setAttribute('height', lg.height);
+    });
     return true;
   }
   // Nivel de la "bota" del acumulador: es un indicador independiente del nivel del
@@ -1324,35 +1362,54 @@
     eq.state.nivelBota = nivel;
     const l1=document.getElementById(id+'-botaLine1'), l2=document.getElementById(id+'-botaLine2'), arc=document.getElementById(id+'-botaArc');
     if(!l1||!l2||!arc) return false;
-    [l1,l2,arc].forEach(elm=>{ elm.classList.remove('normal','bajo','alto'); elm.classList.add(nivel); });
+    scheduleVisual(()=>{
+      [l1,l2,arc].forEach(elm=>{ elm.classList.remove('normal','bajo','alto'); elm.classList.add(nivel); });
+    });
     return true;
   }
   function setEquipoRunState(id, running){
     const eq=getEquipo(id); if(!eq) return false;
     eq.state.run = running;
+    const group=document.getElementById(id), badge=document.getElementById(id+'-badge');
+    if(!group||!badge) return false;
     const ready = eq.state.ready || false;
-    const stateClass = running ? 'run' : (ready ? 'ready' : 'stop');
-    const body=document.getElementById(id+'-body'), badge=document.getElementById(id+'-badge');
-    if(!body||!badge) return false;
-    body.classList.remove('run','stop','ready'); body.classList.add(stateClass);
-    const blade=document.getElementById(id+'-blade');
-    if(blade){ blade.classList.remove('run','stop','ready'); blade.classList.add(stateClass); }
-    const flame=document.getElementById(id+'-flame');
-    if(flame){ flame.setAttribute('fill', running?'var(--orange)':'var(--equip-line)'); flame.setAttribute('opacity', running?'1':'0.35'); }
-    badge.classList.remove('run','stop','ready'); badge.classList.add(stateClass);
-    badge.textContent = running ? (eq.tipo==='horno'?'ENCENDIDO':'EN MARCHA') : (ready?'DISPONIBLE':(eq.tipo==='horno'?'APAGADO':'DETENIDA'));
+    scheduleVisual(()=>{
+      const stateClass = running ? 'run' : (ready ? 'ready' : 'stop');
+      // Actualiza TODOS los elementos "pump-body" del grupo (círculo, rectángulo,
+      // líneas...), no solo el que tiene el id "-body" — algunos diseños de bomba
+      // usan varias formas para dibujar el cuerpo.
+      group.querySelectorAll('.pump-body').forEach(el=>{
+        el.classList.remove('run','stop','ready'); el.classList.add(stateClass);
+      });
+      const blade=document.getElementById(id+'-blade');
+      if(blade){ blade.classList.remove('run','stop','ready'); blade.classList.add(stateClass); }
+      const flame=document.getElementById(id+'-flame');
+      if(flame){ flame.setAttribute('fill', running?'var(--orange)':'var(--equip-line)'); flame.setAttribute('opacity', running?'1':'0.35'); }
+      badge.classList.remove('run','stop','ready'); badge.classList.add(stateClass);
+      badge.textContent = running ? (eq.tipo==='horno'?'ENCENDIDO':'EN MARCHA') : (ready?'DISPONIBLE':(eq.tipo==='horno'?'APAGADO':'DETENIDA'));
+      // Recién ACÁ (cuando esto se ve en pantalla) el equipo cuenta como
+      // autoridad cambiada para el cálculo de caños — no antes.
+      if(eq.revealedState) eq.revealedState.run = running;
+      recomputeAllFlows();
+    });
     return true;
   }
   function setValveState(id, st){
     const eq=getEquipo(id); if(!eq) return false;
     eq.state.estado = st;
-    const ready = eq.state.ready || false;
-    const displayState = (st==='closed' && ready) ? 'ready' : st;
     const l=document.getElementById(id+'-triL'), r=document.getElementById(id+'-triR'), badge=document.getElementById(id+'-badge');
     if(!l||!r||!badge) return false;
-    [l,r].forEach(x=>{ x.classList.remove('open','closing','closed','ready'); x.classList.add(displayState); });
-    badge.classList.remove('open','closing','closed','ready'); badge.classList.add(displayState);
-    badge.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':(ready?'DISPONIBLE':'CERRADA');
+    const ready = eq.state.ready || false;
+    scheduleVisual(()=>{
+      const displayState = (st==='closed' && ready) ? 'ready' : st;
+      [l,r].forEach(x=>{ x.classList.remove('open','closing','closed','ready'); x.classList.add(displayState); });
+      badge.classList.remove('open','closing','closed','ready'); badge.classList.add(displayState);
+      badge.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':(ready?'DISPONIBLE':'CERRADA');
+      // Recién ACÁ (cuando esto se ve en pantalla) la válvula cuenta como
+      // autoridad cambiada para el cálculo de caños — no antes.
+      if(eq.revealedState) eq.revealedState.estado = st;
+      recomputeAllFlows();
+    });
     return true;
   }
   function setFlowMeterState(id, ok){
@@ -1360,9 +1417,11 @@
     eq.state.ok = ok;
     const c=document.getElementById(id+'-circle'), badge=document.getElementById(id+'-badge');
     if(!c||!badge) return false;
-    c.classList.remove('ok','low'); c.classList.add(ok?'ok':'low');
-    badge.classList.remove('ok','low'); badge.classList.add(ok?'ok':'low');
-    badge.textContent = ok?'NORMAL':'ALARMA';
+    scheduleVisual(()=>{
+      c.classList.remove('ok','low'); c.classList.add(ok?'ok':'low');
+      badge.classList.remove('ok','low'); badge.classList.add(ok?'ok':'low');
+      badge.textContent = ok?'NORMAL':'ALARMA';
+    });
     return true;
   }
   function setPipeState(id, st){
@@ -1372,27 +1431,170 @@
     g.classList.remove('flow','transition','noflow'); g.classList.add(st);
     checkLevelDrift(p.from);
     checkLevelDrift(p.to);
-    checkFTSensors(p);
-    mirrorFTFlow(p);
     return true;
   }
 
   // ---- El FT es solo un instrumento en línea: si un lado se queda sin caudal, el otro
   // lado tampoco puede tenerlo (es la misma línea física). Da igual cuál sea "entrada" y
   // cuál "salida" — se replica en ambos sentidos por igual.
-  function mirrorFTFlow(p){
-    if(p.state!=='noflow' && p.state!=='flow') return;
-    [p.from, p.to].forEach(id=>{
-      const eq = getEquipo(id);
-      if(!eq || eq.tipo!=='transmisor_flujo') return;
-      if(p.state==='noflow'){
-        state.canios
-          .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='noflow')
-          .forEach(op=> propagateNoFlow(op.id));
-      } else { // 'flow': se restablece de un lado, se replica del otro y sigue de largo
-        state.canios
-          .filter(op=> op.id!==p.id && (op.from===id || op.to===id) && op.state!=='flow')
-          .forEach(op=> propagateFlow(op.id));
+  // ================= MOTOR DE CAUDAL: MODELO DE AUTORIDADES (sin cascada) =================
+  // Cada tramo se recalcula mirando únicamente sus dos "autoridades" más cercanas,
+  // saltando los instrumentos transparentes (T, FT, horno) que no bloquean ni imponen.
+  // - Recipientes (tanque/separador/columna/acumulador): nunca bloquean.
+  // - Válvula: bloquea si está cerrada. Bomba/compresor: bloquean si están parados.
+  // - Si CUALQUIERA de las dos autoridades de un tramo bloquea, ese tramo queda sin
+  //   caudal — sin importar qué haya del otro lado ni cuántos instrumentos haya en medio.
+  // Estado "ya revelado" en el dibujo (rezagado respecto al estado real, que
+  // cambia al instante). Los caños SOLO deben mirar esto — así nunca "espían"
+  // un cambio que todavía no le tocó su turno de aparecer en pantalla. Si un
+  // equipo no tiene revealedState todavía (por compatibilidad), se usa el real.
+  function revealed(eq){
+    return eq.revealedState || eq.state;
+  }
+  function isTransparent(eq){
+    if(eq.tipo==='horno' || eq.tipo==='transmisor_flujo' || eq.tipo==='transmisor') return true;
+    // Una válvula ABIERTA no tiene autoridad propia: es transparente, deja pasar
+    // lo que haya del otro lado (incluido un bloqueo más lejano). Cerrada, en
+    // cambio, sí es una autoridad dura que corta la búsqueda ahí mismo.
+    // OJO: mira el estado YA REVELADO en el dibujo, no el estado real instantáneo
+    // — así el caño no "espía" un cambio que todavía no se vio en la pantalla.
+    if(eq.tipo==='valvula') return revealed(eq).estado==='open';
+    return false;
+  }
+  function isBlocking(eq){
+    // Solo se evalúa sobre autoridades reales (no transparentes). Si llegamos acá
+    // con una válvula es porque está cerrada (si estuviera abierta, sería
+    // transparente y ni siquiera se habría detenido la búsqueda en ella).
+    if(eq.tipo==='valvula') return true;
+    if(eq.tipo==='bomba' || eq.tipo==='compresor') return !revealed(eq).run;
+    return false; // recipientes nunca bloquean
+  }
+  // Busca la autoridad más cercana a partir de un equipo, sin volver por el caño
+  // desde el que se vino. Atraviesa instrumentos transparentes.
+  // Determina si hay bloqueo mirando desde 'equipoId' hacia el lado contrario de
+  // por donde se llegó (excludePipeId). Usa la flecha (from/to) para saber si el
+  // caño excluido es una ENTRADA o una SALIDA de este equipo, y sigue buscando
+  // solo en la dirección lógica correcta:
+  //   - Si llegamos por una entrada, seguimos por las SALIDAS.
+  //   - Si llegamos por una salida (yendo hacia atrás), seguimos por las ENTRADAS,
+  //     y si hay varias entradas convergiendo, alcanza con que UNA no bloquee
+  //     (nunca hace falta que TODAS bloqueen para considerar bloqueado ese lado).
+  // Devuelve {blocked, junction}: 'junction' avisa si en el camino se cruzó un
+  // punto donde CONVERGEN varias ramas (ej. dos entradas a un horno) — eso se usa
+  // para demorar un paso más el caño de salida, hasta que la última rama que
+  // faltaba termine de asentarse.
+  function isBlockedBeyond(equipoId, excludePipeId, visited){
+    visited = visited || new Set();
+    const key = equipoId+'|'+excludePipeId;
+    if(visited.has(key)) return {blocked:false, junction:false};
+    visited.add(key);
+    const eq = getEquipo(equipoId);
+    if(!eq) return {blocked:false, junction:false};
+    if(!isTransparent(eq)) return {blocked:isBlocking(eq), junction:false};
+
+    const excludedPipe = getPipe(excludePipeId);
+    const cameInAsInlet = !!(excludedPipe && excludedPipe.to===equipoId);
+    const candidatePipes = state.canios.filter(p=>{
+      if(p.id===excludePipeId) return false;
+      return cameInAsInlet ? p.from===equipoId : p.to===equipoId;
+    });
+    if(candidatePipes.length===0) return {blocked:false, junction:false}; // punta muerta: no bloquea
+
+    // Bloqueado solo si TODAS las ramas candidatas (todas las entradas, o todas
+    // las salidas) están bloqueadas — con que UNA esté libre, no bloquea.
+    const results = candidatePipes.map(p=>{
+      const nextId = cameInAsInlet ? p.to : p.from;
+      return isBlockedBeyond(nextId, p.id, visited);
+    });
+    return {
+      blocked: results.every(r=>r.blocked),
+      junction: candidatePipes.length>1 || results.some(r=>r.junction)
+    };
+  }
+  function computeBlocked(pipe){
+    const left = isBlockedBeyond(pipe.from, pipe.id, new Set());
+    const right = isBlockedBeyond(pipe.to, pipe.id, new Set());
+    return { blocked: left.blocked || right.blocked, junction: left.junction || right.junction };
+  }
+  // ================= MOTOR GENÉRICO DE TRIPS (matriz causa → efecto) =================
+  let pending=[];
+  let TRANSITION_MS = 5000; // tiempo entre cada paso de la cascada visual, editable desde el input de arriba
+  let trippedEffects = new Set(); // Registro de efectos que fueron tripeados (no manualmente)
+
+  document.getElementById('transitionInput').addEventListener('input', e=>{
+    const v = parseFloat(e.target.value);
+    if(!isNaN(v) && v>0) TRANSITION_MS = v*1000;
+  });
+  function schedule(fn,delay){ pending.push(setTimeout(fn,delay)); }
+  function clearPending(){ pending.forEach(id=>clearTimeout(id)); pending=[]; }
+
+  // Caños que ya están "esperando" su ola extra por depender de una junta que
+  // recién se completó (ver comentario en recomputeAllFlows). Guarda, para cada
+  // caño, la ola (visualStepMs) en la que se detectó por primera vez — así, si
+  // este cálculo se repite varias veces DENTRO de la misma ola (algo normal ahora
+  // que cada válvula/bomba dispara su propio recálculo), no lo confunde con
+  // "ya esperó su turno": solo se aplica al llegar a una ola estrictamente
+  // posterior a la que quedó guardada.
+  const pendingJunctionPipes = new Map();
+  // Recalcula el color de TODOS los caños según el modelo de autoridades. Se llama
+  // cada vez que cambia el estado de una válvula, bomba o compresor (o la topología).
+  // Los caños van directo de verde a rojo (y viceversa), sin fase naranja intermedia.
+  // Si un caño se bloquea justo porque se completó una junta (ej. las dos ramas que
+  // entran a un horno recién quedaron ambas cerradas), se demora UNA ola más antes
+  // de mostrarlo — para que primero se vea la última rama que faltaba y recién
+  // después la consecuencia en el punto de unión, en vez de todo junto.
+  function recomputeAllFlows(){
+    let needsFollowUp = false;
+    state.canios.forEach(p=>{
+      const result = computeBlocked(p);
+      if(!result.blocked){
+        pendingJunctionPipes.delete(p.id); // se restableció: cancelar cualquier espera pendiente
+        if(p.state!=='flow') setPipeState(p.id,'flow');
+        return;
+      }
+      if(p.state==='noflow') return; // ya estaba
+      const firstSeenAt = pendingJunctionPipes.get(p.id);
+      if(result.junction && (firstSeenAt===undefined || firstSeenAt===visualStepMs)){
+        pendingJunctionPipes.set(p.id, firstSeenAt===undefined ? visualStepMs : firstSeenAt);
+        needsFollowUp = true;
+        return; // no se aplica todavía: espera su propia ola
+      }
+      pendingJunctionPipes.delete(p.id);
+      setPipeState(p.id,'noflow');
+    });
+    // El FT se entera apenas un caño relevante EMPIEZA a perder caudal (entra en
+    // transición), no cuando termina de pintarse rojo del todo — así su propia
+    // alarma comparte la misma ola visual que el trip que la causó, en vez de
+    // quedar una ola entera más atrás.
+    checkFTAlarms();
+    if(needsFollowUp){
+      const targetMs = visualStepMs + TRANSITION_MS;
+      const target = cascadeStartTime + targetMs;
+      pending.push(setTimeout(()=>{
+        visualStepMs = Math.max(visualStepMs, targetMs);
+        recomputeAllFlows();
+      }, Math.max(0, target - Date.now())));
+    }
+  }
+  // Revisa cada caudalímetro: si alguno de sus caños conectados está en baja
+  // (transición o sin caudal), dispara su alarma/causa; si todos volvieron a
+  // fluir, la normaliza. Si eso cambia el estado de otro efecto vía la matriz,
+  // ese cambio vuelve a llamar recomputeAllFlows() — los guards de "ya está así"
+  // en tripEfecto/toggleCausa cortan cualquier recursión.
+  function checkFTAlarms(){
+    state.equipos.forEach(eq=>{
+      if(eq.tipo!=='transmisor_flujo') return;
+      const pipes = state.canios.filter(p=>p.from===eq.id || p.to===eq.id);
+      if(pipes.length===0) return;
+      const anyLow = pipes.some(p=>p.state==='noflow');
+      const allFlowing = pipes.every(p=>p.state==='flow');
+      const causa = state.causas.find(c=>c.linkedEquipoId===eq.id);
+      if(anyLow && eq.state.ok){
+        if(causa && !causa.active){ toggleCausa(causa.id, new Set(), false); }
+        else if(!causa) setFlowMeterState(eq.id, false);
+      } else if(allFlowing && !eq.state.ok){
+        if(causa && causa.active){ toggleCausa(causa.id, new Set(), false); }
+        else if(!causa) setFlowMeterState(eq.id, true);
       }
     });
   }
@@ -1428,153 +1630,6 @@
     }
   }
 
-  // ---- FT: transmisor de caudal, se activa solo si TODOS los caños conectados tienen bajo caudal ----
-  function checkFTSensors(p){
-    [p.from, p.to].forEach(id=>{
-      const eq = getEquipo(id);
-      if(!eq || (eq.tipo!=='transmisor_flujo' && eq.tipo!=='horno')) return;
-
-      // Buscar TODOS los caños conectados al transmisor/horno
-      const connectedPipes = state.canios.filter(pp => pp.from===id || pp.to===id);
-      if(connectedPipes.length === 0) return;
-
-      // Verificar si TODOS los caños tienen bajo caudal (noflow o transition)
-      const allLowFlow = connectedPipes.every(pp => pp.state === 'noflow' || pp.state === 'transition');
-      const allFlowing = connectedPipes.every(pp => pp.state === 'flow');
-      const anyLowFlow = connectedPipes.some(pp => pp.state === 'noflow' || pp.state === 'transition');
-
-      // Comportamiento simétrico:
-      // - Si un lado pierde flujo, el otro lado también lo pierde
-      // - Solo cuando ambos lados están sin flujo, si uno recupera, el otro recupera
-
-      if(eq.tipo === 'transmisor_flujo'){
-        const causa = state.causas.find(c=>c.linkedEquipoId===id);
-
-        if(anyLowFlow && eq.state.ok){
-          // Al menos UN lado sin flujo -> activar alarma y cortar el otro lado
-          if(causa && !causa.active){
-            nextCascadeLevel();
-            toggleCausa(causa.id, new Set(), false);
-          } else if(!causa){
-            setFlowMeterState(id, false);
-          }
-          // Propagar sin flujo a todos los caños conectados
-          connectedPipes.forEach(pp => {
-            if(pp.state === 'flow'){
-              propagateNoFlow(pp.id, new Set());
-            }
-          });
-        } else if(allFlowing && !eq.state.ok){
-          // TODOS los lados tienen flujo -> normalizar
-          if(causa && causa.active){
-            toggleCausa(causa.id, new Set(), false);
-          } else if(!causa){
-            setFlowMeterState(id, true);
-          }
-        }
-      } else if(eq.tipo === 'horno'){
-        // Mismo comportamiento para el horno
-        if(anyLowFlow){
-          // Si un lado pierde flujo, propagar al otro
-          connectedPipes.forEach(pp => {
-            if(pp.state === 'flow'){
-              propagateNoFlow(pp.id, new Set(), cascadeLevel);
-            }
-          });
-        } else if(allFlowing){
-          // Si ambos lados recuperan flujo, propagar
-          connectedPipes.forEach(pp => {
-            if(pp.state !== 'flow'){
-              propagateFlow(pp.id, new Set());
-            }
-          });
-        }
-      }
-    });
-  }
-
-  // ================= MOTOR GENÉRICO DE TRIPS (matriz causa → efecto) =================
-  let pending=[];
-  let TRANSITION_MS = 5000; // tiempo naranja→rojo en los caños, editable desde el input de arriba
-  let trippedEffects = new Set(); // Registro de efectos que fueron tripeados (no manualmente)
-
-  document.getElementById('transitionInput').addEventListener('input', e=>{
-    const v = parseFloat(e.target.value);
-    if(!isNaN(v) && v>0) TRANSITION_MS = v*1000;
-  });
-  function schedule(fn,delay){ pending.push(setTimeout(fn,delay)); }
-  function clearPending(){ pending.forEach(id=>clearTimeout(id)); pending=[]; }
-
-  // ¿Este efecto bloquea el paso de caudal en su estado actual? (para saber si al
-  // restablecer flujo aguas arriba, corresponde seguir empujándolo hacia adelante)
-  function isEffectBlocking(eq){
-    if(!eq) return false;
-    if(eq.tipo==='valvula') return eq.state.estado!=='open';
-    if(eq.tipo==='bomba' || eq.tipo==='compresor') return !eq.state.run;
-    return false; // el horno nunca bloquea; los recipientes con nivel no entran acá
-  }
-
-  // Propaga "sin caudal" aguas abajo desde un caño, atravesando equipos pasivos
-  // y disparando cualquier transmisor que detecte la caída (cascada indirecta).
-  function propagateNoFlow(pipeId, visited){
-    visited = visited || new Set();
-    if(visited.has(pipeId)) return;
-    visited.add(pipeId);
-    const p = getPipe(pipeId);
-    if(!p || p.state==='noflow') return;
-    setPipeState(pipeId,'transition');
-    schedule(()=>{
-      const cur = getPipe(pipeId);
-      if(!cur || cur.state!=='transition') return;
-      setPipeState(pipeId,'noflow');
-      const downstream = getEquipo(p.to);
-      // Los recipientes con nivel (tanque/separador) actúan como buffer: si se les
-      // corta la entrada, el nivel cae de a poco pero la salida NO pierde caudal
-      // automáticamente por eso. Por eso la cascada de "sin caudal" no los atraviesa.
-      if(downstream && !('nivel' in downstream.state)){
-        // Si el downstream es un transmisor de flujo, disparar cascada
-        if(downstream.tipo==='transmisor_flujo'){
-          const causa = state.causas.find(c=>c.linkedEquipoId===downstream.id);
-          if(causa && !causa.active){
-            // Nueva causa en cascada: incrementar nivel
-            nextCascadeLevel();
-            toggleCausa(causa.id, visited, false);
-          }
-        }
-        state.canios.filter(pp=>pp.from===downstream.id).forEach(pp=> propagateNoFlow(pp.id, visited));
-      }
-    },TRANSITION_MS);
-  }
-
-  // Simétrica a propagateNoFlow, pero para restablecer caudal hacia adelante: la usan
-  // la reapertura/rearranque manual de un efecto y el mirror de los caudalímetros FT,
-  // para que equipos "de paso" (como el horno) no se queden con un lado sin caudal
-  // cuando el otro ya se recuperó.
-  function propagateFlow(pipeId, visited){
-    visited = visited || new Set();
-    if(visited.has(pipeId)) return;
-    visited.add(pipeId);
-    const p = getPipe(pipeId);
-    if(!p || p.state==='flow') return;
-    setPipeState(pipeId,'flow');
-    const downstream = getEquipo(p.to);
-    if(downstream && !('nivel' in downstream.state) && !isEffectBlocking(downstream)){
-      state.canios.filter(pp=>pp.from===downstream.id).forEach(pp=> propagateFlow(pp.id, visited));
-    }
-  }
-
-  // Corta el caudal alrededor de un efecto: el caño anterior pierde caudal en un solo
-  // tramo, y el/los caños posteriores siguen la cascada hacia adelante. La usan tanto
-  // un trip de la matriz como un cierre/parada manual.
-  function cutEfectoFlow(efectoId, visited){
-    const prev = state.canios.find(p=>p.to===efectoId);
-    if(prev){
-      setPipeState(prev.id,'transition');
-      schedule(()=>{ if(getPipe(prev.id).state==='transition'){ setPipeState(prev.id,'noflow'); } },TRANSITION_MS);
-    }
-    state.canios.filter(p=>p.from===efectoId).forEach(p=> propagateNoFlow(p.id, visited));
-  }
-
   // Un efecto (válvula/bomba/compresor/horno) se tripea por la matriz.
   function tripEfecto(efectoId, visited){
     const eq = getEquipo(efectoId);
@@ -1590,19 +1645,18 @@
       if(eq.state.estado === trippedPos) return; // ya está en la posición de falla
       setValveState(efectoId, trippedPos);
       log(labelOf(efectoId)+(trippedPos==='closed'?' cerrada':' abierta')+' por trip.','effect');
-      if(trippedPos==='closed') cutEfectoFlow(efectoId, visited);
-      else restoreAdjacent(efectoId);
+      scheduleVisual(recomputeAllFlows);
       updateEffectsAvailability();
       return;
     }
     if((eq.tipo==='bomba'||eq.tipo==='compresor'||eq.tipo==='horno') && eq.state.run){
       setEquipoRunState(efectoId,false);
       log(labelOf(efectoId)+' '+(eq.tipo==='horno'?'apagado':'detenida')+' por trip.','effect');
-      // El horno no corta caudal al apagarse (por definición): no afecta a los caños vecinos.
-      if(TYPE_DEFS[eq.tipo].blocksFlow) cutEfectoFlow(efectoId, visited);
+      scheduleVisual(recomputeAllFlows); // el horno no bloquea, así que esto no le cambia nada a los caños
       updateEffectsAvailability();
     }
   }
+
 
   function fireCausa(causaId, visited){
     visited = visited || new Set();
@@ -1626,10 +1680,9 @@
     const activating = !c.active;
     c.active = activating;
 
-    // Si es manual (primera causa), resetear al nivel 1
-    if(isManual === true){
-      cascadeLevel = 1;
-    }
+    // Si es un disparo manual (raíz de una nueva cascada), arrancamos el reloj
+    // visual desde cero para que esta cascada se vea completa, paso a paso.
+    if(isManual === true) resetVisualClock();
 
     if(c.linkedEquipoId){
       const eq = getEquipo(c.linkedEquipoId);
@@ -1643,26 +1696,33 @@
       }
     }
     const label = causaLabel(c);
-    log(activating ? (label+' activada.') : (label+' normalizada.'), activating?'cause':'restore');
     if(activating){
-      // Incrementar nivel: ahora vienen los efectos
+      // Esta activación es un evento nuevo: sube el número ANTES de registrarse,
+      // así nunca repite el último número usado por algo anterior (una cascada
+      // previa, una reposición, etc.) — cada activación toma uno propio y fresco.
       nextCascadeLevel();
+      log(label+' activada.', 'cause');
+      // Incrementar nivel de nuevo: ahora vienen los efectos. El reloj visual
+      // avanza acá — justo entre esta causa y SUS PROPIOS trips — no antes.
+      nextCascadeLevel();
+      visualStepMs += TRANSITION_MS;
       fireCausa(causaId, visited);
+    } else {
+      // Normalizar también es un evento nuevo: sigue la numeración donde haya
+      // quedado la cascada (si los efectos terminaron en 6), esto es 7), la
+      // próxima normalización 8), etc.), en vez de repetir el último número.
+      nextCascadeLevel();
+      log(label+' normalizada.', 'restore');
     }
 
     // Actualizar disponibilidad de todos los efectos
     updateEffectsAvailability();
     renderCausaButtons();
-    render();
+    refreshReadyBadges();
   }
 
   // Restablece manualmente los caños inmediatos de un efecto que se vuelve a abrir/arrancar
   // (no revierte una cascada completa — para eso está el botón Reset).
-  function restoreAdjacent(efectoId){
-    const prev = state.canios.find(p=>p.to===efectoId);
-    if(prev) setPipeState(prev.id, 'flow');
-    state.canios.filter(p=>p.from===efectoId).forEach(p=> propagateFlow(p.id));
-  }
 
   // Verifica si un efecto está disponible para normalizar
   // Retorna true si:
@@ -1722,9 +1782,21 @@
     });
   }
 
+  // Refresca el badge "DISPONIBLE"/estado de cada efecto reinvocando su propio
+  // setter (que ya pasa por el reloj visual), para que este refresco de
+  // disponibilidad no se salte la demora del resto de la cascada.
+  function refreshReadyBadges(){
+    state.equipos.forEach(eq=>{
+      if(TYPE_DEFS[eq.tipo].category!=='efecto') return;
+      if(eq.tipo==='valvula') setValveState(eq.id, eq.state.estado);
+      else if(eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') setEquipoRunState(eq.id, eq.state.run);
+    });
+  }
+
   function handleSimClick(eq){
     // No permitir simulación en modo edición
     if(editMode) return;
+    resetVisualClock(); // cada click manual es la raíz de su propia cascada visual
 
     const cat = TYPE_DEFS[eq.tipo].category;
     if(cat==='causa'){
@@ -1750,34 +1822,30 @@
       const closing = eq.state.estado==='open';
       const restoring = isInFailPosition && !closing; // Es reposición si estaba en posición de falla y ahora se normaliza
       setValveState(eq.id, closing?'closed':'open');
+      nextCascadeLevel(); // cada click manual es un evento nuevo: sigue la numeración
       log((restoring?'Reponer: ':'Forzado manual: ')+labelOf(eq.id)+(closing?' cerrada.':' abierta.'), restoring?'restore':'cause');
       if(!closing) trippedEffects.delete(eq.id); // Si se abre/arranca, ya no está tripeado
-      if(TYPE_DEFS[eq.tipo].blocksFlow){
-        if(closing) cutEfectoFlow(eq.id);
-        else restoreAdjacent(eq.id);
-      }
+      scheduleVisual(recomputeAllFlows);
     } else if(eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno'){
       const stopping = eq.state.run;
       const restoring = isInFailPosition && !stopping; // Es reposición si estaba detenido y ahora arranca
       setEquipoRunState(eq.id, !stopping);
+      nextCascadeLevel(); // cada click manual es un evento nuevo: sigue la numeración
       log((restoring?'Reponer: ':'Forzado manual: ')+labelOf(eq.id)+(stopping?(eq.tipo==='horno'?' apagado.':' detenida.'):(eq.tipo==='horno'?' encendido.':' en marcha.')), restoring?'restore':'cause');
       if(!stopping) trippedEffects.delete(eq.id); // Si se arranca, ya no está tripeado
-      // El horno no corta ni restablece caudal en los caños vecinos (por definición).
-      if(TYPE_DEFS[eq.tipo].blocksFlow){
-        if(stopping) cutEfectoFlow(eq.id);
-        else restoreAdjacent(eq.id);
-      }
+      scheduleVisual(recomputeAllFlows); // el horno no bloquea, así que esto no le cambia nada a los caños
     }
 
     // Actualizar disponibilidad de todos los efectos
     updateEffectsAvailability();
-    render();
+    refreshReadyBadges();
   }
 
   function resetPlant(){
     clearPending();
     Object.keys(levelDriftTimers).forEach(id=>clearTimeout(levelDriftTimers[id]));
     for(const k in levelDriftTimers) delete levelDriftTimers[k];
+    pendingJunctionPipes.clear(); // ninguna espera de junta sobrevive a un reset
     trippedEffects.clear(); // Limpiar registro de efectos tripeados
     resetLog(); // Reiniciar contador de eventos
     state.equipos.forEach(eq=>{
@@ -1786,20 +1854,16 @@
       if(eq.tipo==='valvula'){
         eq.state.estado = (eq.failMode==='abre') ? 'closed' : 'open';
       }
+      eq.revealedState = JSON.parse(JSON.stringify(eq.state)); // arranca igual al real
     });
     state.canios.forEach(p=>{ p.state='flow'; });
-    // Una válvula falla-abre es normalmente cerrada: sus caños vecinos arrancan sin caudal.
-    state.equipos.forEach(eq=>{
-      if(eq.tipo==='valvula' && eq.state.estado==='closed'){
-        state.canios.forEach(p=>{ if(p.from===eq.id || p.to===eq.id) p.state='noflow'; });
-      }
-    });
     state.causas.forEach(c=>{ c.active=false; });
     logList.innerHTML='';
     const expandedClear = document.getElementById('logListExpanded');
     if(expandedClear) expandedClear.innerHTML='';
     updateEffectsAvailability(); // Actualizar disponibilidad
     render();
+    recomputeAllFlows(); // calcula el color real de cada caño (ej. válvula falla-abre normalmente cerrada)
     log('Planta reseteada a condición normal de operación.','info');
   }
 
