@@ -359,7 +359,6 @@
     <div class="panel" id="referencesDiagram">
       <h3>Referencias</h3>
       <div class="legend-row"><span class="swatch green"></span> Caño con caudal</div>
-      <div class="legend-row"><span class="swatch orange"></span> Caño en transición</div>
       <div class="legend-row"><span class="swatch red"></span> Caño sin caudal</div>
       <div class="legend-row"><span class="swatch dot-green"></span> Equipo normal / válvula abierta</div>
       <div class="legend-row" style="align-items:center;"><div style="width:10px;height:10px;border-radius:50%;background:var(--orange);flex:none;"></div> Efecto disponible para normalizar</div>
@@ -584,6 +583,8 @@
         const run = eq.state.run;
         const ready = eq.state.ready || false;
         const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
+        el('text',{id:eq.id+'-failmode',x:28,y:-8,'text-anchor':'middle','font-size':10,'font-weight':'700',
+          fill:'var(--equip-line)'},g).textContent = eq.failMode==='arranca'?'FA':'FP';
         // Círculo principal
         el('circle',{id:eq.id+'-body',class:'pump-body '+stateClass,cx:28,cy:28,r:20,'stroke-width':2.5},g);
         // Círculo chico adentro
@@ -681,6 +682,8 @@
         const run = eq.state.run!==false;
         const ready = eq.state.ready || false;
         const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
+        el('text',{id:eq.id+'-failmode',x:35,y:-16,'text-anchor':'middle','font-size':10,'font-weight':'700',
+          fill:'var(--equip-line)'},g).textContent = eq.failMode==='arranca'?'FA':'FP';
         el('polygon',{id:eq.id+'-body',class:'pump-body '+stateClass,
           points:'0,0 0,40 70,30 70,10','stroke-width':3},g);
         el('text',{id:eq.id+'-label',x:35,y:-6,'text-anchor':'middle',class:'equip-label'},g).textContent = eq.label||eq.id;
@@ -912,6 +915,15 @@
             <button id="btnFailAbre" class="${failsAbre?'primary':''}" style="flex:1;">Falla abre${failsAbre?' ✓':''}</button>
           </div>`;
       }
+      if(eq.tipo==='bomba' || eq.tipo==='compresor'){
+        const failsArranca = eq.failMode==='arranca';
+        failModeHtml = `<p class="hint" style="margin:6px 0 4px;">Posición normal / modo de falla:</p>
+          <div class="edit-row">
+            <button id="btnFailPara" class="${failsArranca?'':'primary'}" style="flex:1;">Falla para${failsArranca?'':' ✓'}</button>
+            <button id="btnFailArranca" class="${failsArranca?'primary':''}" style="flex:1;">Falla arranca${failsArranca?' ✓':''}</button>
+          </div>
+          <p class="hint" style="margin:0 0 6px;font-size:11px;">"Falla para": normalmente en marcha, el trip la detiene.<br>"Falla arranca": normalmente parada, el trip la arranca.</p>`;
+      }
       p.innerHTML = `<p class="hint"><b>Equipo:</b></p>
         <div class="edit-row"><input type="text" id="editLabel" value="${eq.label||''}" placeholder="Etiqueta"></div>
         ${failModeHtml}
@@ -930,7 +942,9 @@
           if(eq.failMode==='abre'){
             eq.failMode = 'cierra';
             setValveState(eq.id, 'open');
-            restoreAdjacent(eq.id);
+            // setValveState ya dispara recomputeAllFlows() (vía scheduleVisual), que
+            // recalcula todo el caudal con el modelo de autoridades vigente — no hace
+            // falta (ni existe) una función aparte para "restablecer lo adyacente".
             const fmEl = document.getElementById(eq.id+'-failmode'); if(fmEl) fmEl.textContent = 'FC';
             markAsChanged();
           }
@@ -940,8 +954,29 @@
           if(eq.failMode!=='abre'){
             eq.failMode = 'abre';
             setValveState(eq.id, 'closed');
-            cutEfectoFlow(eq.id);
+            // Idem: setValveState ya recalcula el bloqueo de caños; no hace falta
+            // "cortar el caudal" a mano con una función que no existía.
             const fmEl = document.getElementById(eq.id+'-failmode'); if(fmEl) fmEl.textContent = 'FO';
+            markAsChanged();
+          }
+          updateSelectionUI();
+        });
+      }
+      if(eq.tipo==='bomba' || eq.tipo==='compresor'){
+        document.getElementById('btnFailPara').addEventListener('click', ()=>{
+          if(eq.failMode==='arranca'){
+            eq.failMode = 'para';
+            setEquipoRunState(eq.id, true); // normal en marcha
+            const fmEl = document.getElementById(eq.id+'-failmode'); if(fmEl) fmEl.textContent = 'FP';
+            markAsChanged();
+          }
+          updateSelectionUI();
+        });
+        document.getElementById('btnFailArranca').addEventListener('click', ()=>{
+          if(eq.failMode!=='arranca'){
+            eq.failMode = 'arranca';
+            setEquipoRunState(eq.id, false); // normal parada
+            const fmEl = document.getElementById(eq.id+'-failmode'); if(fmEl) fmEl.textContent = 'FA';
             markAsChanged();
           }
           updateSelectionUI();
@@ -1310,6 +1345,7 @@
     const newEq = {id, tipo, x:120+Math.random()*400, y:200+Math.random()*140,
       label:'', state: JSON.parse(JSON.stringify(def.defaultState))};
     if(tipo==='valvula') newEq.failMode = 'cierra'; // falla-cierra por defecto (normal abierta)
+    if(tipo==='bomba' || tipo==='compresor') newEq.failMode = 'para'; // falla-para por defecto (normal en marcha)
     newEq.revealedState = JSON.parse(JSON.stringify(newEq.state));
     state.equipos.push(newEq);
     if(tipo==='transmisor' || tipo==='transmisor_flujo'){
@@ -1630,6 +1666,16 @@
     }
   }
 
+  // Determina a qué posición de "run" lleva el trip a un equipo bomba/compresor/horno:
+  // true = el trip lo lleva a marcha, false = el trip lo lleva a parada.
+  // El horno no tiene modo de falla propio (siempre trippea a apagado, como siempre).
+  // Bomba/compresor sí: 'para' (normal en marcha, default) trippea a parada;
+  // 'arranca' (normal parada) trippea a marcha.
+  function runTripTarget(eq){
+    if(eq.tipo==='horno') return false;
+    return eq.failMode==='arranca';
+  }
+
   // Un efecto (válvula/bomba/compresor/horno) se tripea por la matriz.
   function tripEfecto(efectoId, visited){
     const eq = getEquipo(efectoId);
@@ -1649,9 +1695,12 @@
       updateEffectsAvailability();
       return;
     }
-    if((eq.tipo==='bomba'||eq.tipo==='compresor'||eq.tipo==='horno') && eq.state.run){
-      setEquipoRunState(efectoId,false);
-      log(labelOf(efectoId)+' '+(eq.tipo==='horno'?'apagado':'detenida')+' por trip.','effect');
+    if(eq.tipo==='bomba'||eq.tipo==='compresor'||eq.tipo==='horno'){
+      const target = runTripTarget(eq);
+      if(eq.state.run === target) return; // ya está en la posición de falla
+      setEquipoRunState(efectoId, target);
+      const verbo = target ? (eq.tipo==='horno'?'encendido':'arrancada') : (eq.tipo==='horno'?'apagado':'detenida');
+      log(labelOf(efectoId)+' '+verbo+' por trip.','effect');
       scheduleVisual(recomputeAllFlows); // el horno no bloquea, así que esto no le cambia nada a los caños
       updateEffectsAvailability();
     }
@@ -1770,7 +1819,7 @@
 
       // Verificar si está en posición de falla
       const isInFailPosition = (eq.tipo==='valvula' && ((eq.failMode==='abre' && eq.state.estado==='open') || (eq.failMode==='cierra' && eq.state.estado==='closed'))) ||
-                               ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && !eq.state.run);
+                               ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && eq.state.run===runTripTarget(eq));
 
       if(!isInFailPosition){
         eq.state.ready = false;
@@ -1812,7 +1861,7 @@
     // Efecto: forzado manual (abrir/cerrar, arrancar/parar) fuera de la matriz.
     // Verificar si está en posición de falla y si puede ser repuesto
     const isInFailPosition = (eq.tipo==='valvula' && ((eq.failMode==='abre' && eq.state.estado==='open') || (eq.failMode==='cierra' && eq.state.estado==='closed'))) ||
-                             ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && !eq.state.run);
+                             ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && eq.state.run===runTripTarget(eq));
 
     if(isInFailPosition && !canManuallyRestore(eq.id)){
       return; // bloqueado por una causa pendiente: no es un evento, no se registra
@@ -1827,12 +1876,18 @@
       if(!closing) trippedEffects.delete(eq.id); // Si se abre/arranca, ya no está tripeado
       scheduleVisual(recomputeAllFlows);
     } else if(eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno'){
-      const stopping = eq.state.run;
-      const restoring = isInFailPosition && !stopping; // Es reposición si estaba detenido y ahora arranca
-      setEquipoRunState(eq.id, !stopping);
+      // Con el modo de falla, "normal" ya no es siempre "en marcha" (una bomba
+      // falla-arranca es normalmente parada). El click deja de estar en la
+      // posición de falla cuando el nuevo estado de run ya no coincide con el
+      // target del trip — eso (y no simplemente "ahora está corriendo") es lo
+      // que define si esto es una reposición o un forzado manual nuevo.
+      const target = runTripTarget(eq);
+      const newRun = !eq.state.run;
+      const restoring = isInFailPosition && newRun!==target;
+      setEquipoRunState(eq.id, newRun);
       nextCascadeLevel(); // cada click manual es un evento nuevo: sigue la numeración
-      log((restoring?'Reponer: ':'Forzado manual: ')+labelOf(eq.id)+(stopping?(eq.tipo==='horno'?' apagado.':' detenida.'):(eq.tipo==='horno'?' encendido.':' en marcha.')), restoring?'restore':'cause');
-      if(!stopping) trippedEffects.delete(eq.id); // Si se arranca, ya no está tripeado
+      log((restoring?'Reponer: ':'Forzado manual: ')+labelOf(eq.id)+(newRun?(eq.tipo==='horno'?' encendido.':' en marcha.'):(eq.tipo==='horno'?' apagado.':' detenida.')), restoring?'restore':'cause');
+      if(newRun!==target) trippedEffects.delete(eq.id); // Si volvió a su posición normal, ya no está tripeado
       scheduleVisual(recomputeAllFlows); // el horno no bloquea, así que esto no le cambia nada a los caños
     }
 
@@ -1849,10 +1904,18 @@
     trippedEffects.clear(); // Limpiar registro de efectos tripeados
     resetLog(); // Reiniciar contador de eventos
     state.equipos.forEach(eq=>{
+      // Compatibilidad con proyectos guardados antes de que existiera este modo:
+      // si no tienen failMode todavía, asignarles el que reproduce el comportamiento
+      // de siempre (válvula: falla-cierra / bomba-compresor: falla-para).
+      if(eq.tipo==='valvula' && !eq.failMode) eq.failMode = 'cierra';
+      if((eq.tipo==='bomba' || eq.tipo==='compresor') && !eq.failMode) eq.failMode = 'para';
       eq.state = JSON.parse(JSON.stringify(TYPE_DEFS[eq.tipo].defaultState));
       eq.state.ready = false; // Inicializar estado ready
       if(eq.tipo==='valvula'){
         eq.state.estado = (eq.failMode==='abre') ? 'closed' : 'open';
+      }
+      if(eq.tipo==='bomba' || eq.tipo==='compresor'){
+        eq.state.run = (eq.failMode==='arranca') ? false : true;
       }
       eq.revealedState = JSON.parse(JSON.stringify(eq.state)); // arranca igual al real
     });
@@ -1893,7 +1956,7 @@
       const inner=document.createElement('div'); inner.className='th-inner';
       const handle=document.createElement('span'); handle.className='col-drag-handle'; handle.textContent='⋮⋮';
       handle.title='Arrastrar para reordenar';
-      handle.addEventListener('mousedown', e=>{ e.stopPropagation(); startColDrag(ef.id, e); });
+      handle.addEventListener('mousedown', e=>{ e.stopPropagation(); if(blockedByReadonly()) return; startColDrag(ef.id, e); });
       const nameSpan=document.createElement('span'); nameSpan.textContent = ef.label||ef.id;
       inner.appendChild(handle); inner.appendChild(nameSpan);
       th.appendChild(inner);
@@ -1908,12 +1971,13 @@
       const inner=document.createElement('div'); inner.className='th-inner';
       const handle=document.createElement('span'); handle.className='row-drag-handle'; handle.textContent='⋮⋮';
       handle.title='Arrastrar para reordenar';
-      handle.addEventListener('mousedown', e=>{ e.stopPropagation(); startRowDrag(ca.id, e); });
+      handle.addEventListener('mousedown', e=>{ e.stopPropagation(); if(blockedByReadonly()) return; startRowDrag(ca.id, e); });
       const nameSpan = document.createElement('span'); nameSpan.textContent = causaLabel(ca);
       nameSpan.style.cursor = 'pointer';
       nameSpan.title = 'Click para renombrar';
       nameSpan.addEventListener('click', (e)=>{
         e.stopPropagation();
+        if(blockedByReadonly()) return;
         if(ca.linkedEquipoId){
           const eq = getEquipo(ca.linkedEquipoId);
           if(eq) renameEquipo(eq);
@@ -1945,6 +2009,7 @@
         }
         cell.title = causaLabel(ca)+' → '+(ef.label||ef.id)+'\nClick: Trip → Manual (1) → Vacío';
         cell.addEventListener('click', ()=>{
+          if(blockedByReadonly()) return;
           state.trips[ca.id] = state.trips[ca.id] || {};
           const current = state.trips[ca.id][ef.id];
 
@@ -1979,6 +2044,7 @@
   }
 
   document.getElementById('btnDeleteCausa').addEventListener('click', ()=>{
+    if(blockedByReadonly()) return;
     if(!selectedCausaId) return;
     const causa = getCausa(selectedCausaId);
     if(!causa) return;
@@ -2113,6 +2179,7 @@
   document.getElementById('btnBackToDiagramTop').addEventListener('click', showDiagramView);
 
   document.getElementById('btnAddCausa').addEventListener('click', ()=>{
+    if(blockedByReadonly()) return;
     openTextModal('Nombre de la causa (ej. Pulsador Emergencia PE-01):', '', (label)=>{
       let n=1; while(getCausa('causa_'+n)) n++;
       state.causas.push({id:'causa_'+n, label, linkedEquipoId:null, active:false});
@@ -2152,6 +2219,17 @@
   let currentProjectOwner = null;
   let hasUnsavedChanges = false;
   let isAdminMode = false;
+  // Permiso de edición del proyecto actualmente cargado. true por defecto: un
+  // proyecto nuevo (sin ID todavía) siempre es editable. Lo actualiza
+  // checkProjectPermissions() y lo consultan tanto los botones Editar/Guardar
+  // como cualquier acción que modifique el modelo por fuera del modo edición
+  // (matriz de trips: agregar/borrar causas, tocar celdas, renombrar, reordenar).
+  let canEditCurrentProject = true;
+  function blockedByReadonly(){
+    if(canEditCurrentProject) return false;
+    alert('Este proyecto está en modo solo lectura. No podés modificarlo.');
+    return true;
+  }
   const ADMIN_PASSWORD = 'admin123'; // Contraseña de administrador
 
   function markAsChanged(){
@@ -2210,33 +2288,48 @@
   }
 
   async function checkProjectPermissions(){
-    // Si el proyecto es de solo lectura y el usuario no es admin ni el dueño, deshabilitar edición
+    // Si el proyecto es de solo lectura y el usuario no es admin ni el dueño, deshabilitar edición.
+    // IMPORTANTE: todas las ramas (incluidas las de salida temprana) deben dejar
+    // btnEdit/btnSave/canEditCurrentProject en un estado explícito. Antes, las
+    // salidas tempranas (sin proyecto todavía, o sin Supabase configurado) no
+    // tocaban esos botones, así que un proyecto nuevo podía heredar el bloqueo
+    // "solo lectura" dejado por el proyecto readonly que se estuviera viendo antes.
     const readonlyIndicator = document.getElementById('readonlyIndicator');
+    const btnEdit = document.getElementById('btnEditMode');
+    const btnSave = document.getElementById('btnGuardar');
+
+    function setEditable(){
+      canEditCurrentProject = true;
+      btnEdit.disabled = false;
+      btnEdit.title = 'Modo edición';
+      btnSave.disabled = false;
+      btnSave.title = 'Guardar proyecto en Supabase';
+      readonlyIndicator.style.display = 'none';
+    }
 
     if(!currentProjectId){
-      readonlyIndicator.style.display = 'none';
+      // Proyecto nuevo (todavía sin guardar): siempre editable.
+      setEditable();
       return;
     }
 
     const sb = getSupabase();
     if(!sb){
-      readonlyIndicator.style.display = 'none';
+      // Sin Supabase no hay forma de verificar permisos; no bloquear al usuario.
+      setEditable();
       return;
     }
 
     const { data:proj, error } = await sb.from('projects').select('readonly,owner').eq('id',currentProjectId).single();
     if(error){
-      readonlyIndicator.style.display = 'none';
+      setEditable();
       return;
     }
 
     const canEdit = isAdminMode || !proj.readonly || proj.owner === getUserId();
 
-    // Deshabilitar botones de edición si no tiene permisos
-    const btnEdit = document.getElementById('btnEditMode');
-    const btnSave = document.getElementById('btnGuardar');
-
     if(!canEdit){
+      canEditCurrentProject = false;
       if(editMode){
         // Salir del modo edición si estaba activo
         btnEdit.click();
@@ -2247,11 +2340,7 @@
       btnSave.title = 'No tenés permisos para guardar cambios';
       readonlyIndicator.style.display = 'block';
     } else {
-      btnEdit.disabled = false;
-      btnEdit.title = 'Modo edición';
-      btnSave.disabled = false;
-      btnSave.title = 'Guardar proyecto en Supabase';
-      readonlyIndicator.style.display = 'none';
+      setEditable();
     }
   }
 
@@ -2360,7 +2449,13 @@
             }
             const { error:err3 } = await sb.from('projects').delete().eq('id',proj.id);
             if(err3){ alert('No se pudo borrar: '+err3.message); return; }
-            if(currentProjectId===proj.id){ currentProjectId=null; currentProjectOwner=null; }
+            if(currentProjectId===proj.id){
+              // El proyecto que se acaba de borrar es el que está abierto en el
+              // editor: hay que resetear todo (si no, "Guardar" después crearía
+              // silenciosamente un proyecto nuevo con el contenido del borrado).
+              loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, '', null);
+              alert('El proyecto "'+proj.name+'" fue eliminado. Se abrió un proyecto nuevo en blanco.');
+            }
             refreshCloudStatusAndList(isProjectsModal);
           });
           row.appendChild(delBtn);
