@@ -2,6 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Simulador de Trips</title>
 <style>
   /* ============================================================
@@ -45,6 +46,22 @@
   .project-title-display{font-size:15px;font-weight:600;color:var(--text-light);letter-spacing:0.3px;}
   .stage{grid-column:1;grid-row:2;position:relative;padding:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
   aside{grid-column:2;grid-row:1 / -1;width:340px;}
+  #btnTogglePanel{display:none;}
+  /* Pantallas angostas (celular en horizontal, etc.): el panel lateral (registro
+     + editor) deja de ocupar espacio fijo siempre — se oculta y aparece como un
+     cajón (drawer) que se desliza desde la derecha al tocar el botón ☰. */
+  @media (max-width: 900px){
+    .app{grid-template-columns:1fr;}
+    .topbar{padding:8px;gap:6px;}
+    .topbar-center{display:none;} /* el título ocupa lugar que hace falta para los botones */
+    #btnTogglePanel{display:inline-flex;}
+    aside{position:fixed;top:48px;right:0;bottom:0;width:88vw;max-width:340px;
+      transform:translateX(100%);transition:transform .22s ease;z-index:200;
+      box-shadow:-6px 0 18px rgba(0,0,0,.45);background:var(--bg-app);}
+    body.panel-open aside{transform:translateX(0);}
+    body.panel-open .stage::after{content:'';position:fixed;inset:48px 0 0 0;
+      background:rgba(0,0,0,.35);z-index:150;}
+  }
   button{background:var(--bg-panel-alt);border:1px solid var(--border-panel);color:var(--text-light);
     padding:7px 12px;border-radius:5px;font-size:12.5px;cursor:pointer;transition:background .15s,border-color .15s;
     box-shadow:0 2px 6px rgba(0,0,0,.35);}
@@ -56,7 +73,7 @@
   .btn-fixed-width{min-width:90px;}
   .sep{width:1px;align-self:stretch;background:var(--border-panel);margin:0 2px;}
 
-  .diagram-wrap{position:relative;background:var(--bg-diagram);flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden;cursor:grab;}
+  .diagram-wrap{position:relative;background:var(--bg-diagram);flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden;cursor:grab;touch-action:none;}
   .diagram-wrap.panning{cursor:grabbing;}
   .zoom-controls{position:absolute;bottom:14px;right:14px;z-index:10;display:flex;flex-direction:column;gap:4px;}
   .zoom-controls button{width:34px;height:34px;padding:0;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;}
@@ -200,7 +217,7 @@
   .causa-btn.active{background:var(--red);border-color:var(--red);color:#fff;}
 
   .matrix-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:4px;}
-  .row-drag-handle,.col-drag-handle{cursor:grab;color:var(--text-dim-light);user-select:none;font-size:12px;}
+  .row-drag-handle,.col-drag-handle{cursor:grab;color:var(--text-dim-light);user-select:none;font-size:12px;touch-action:none;}
   .row-drag-handle:active,.col-drag-handle:active{cursor:grabbing;}
   .trip-table tbody tr.row-selected th{background:var(--gray-4);}
   .trip-table th .th-inner{display:flex;align-items:center;gap:6px;}
@@ -315,6 +332,7 @@
       <button id="btnMatriz" title="Matriz de trips">📊 Matriz</button>
       <button id="btnReset" title="Reset planta">↺ Reset</button>
       <button id="btnBackToDiagramTop" style="display:none;" title="Volver al diagrama">← Volver al diagrama</button>
+      <button id="btnTogglePanel" title="Registro / Editor">☰</button>
     </div>
   </div>
 
@@ -1120,7 +1138,7 @@
       el('path',{class:'pipe-line', d:path.d}, g);
       el('polygon',{class:'pipe-arrow', points:arrowPts(path.p2, p.toPort)}, g);
       const hit = el('path',{class:'pipe-hit', d:path.d}, g);
-      hit.addEventListener('mousedown', e=>{
+      hit.addEventListener('pointerdown', e=>{
         e.stopPropagation();
         if(!editMode) return;
         selectItem('pipe', p.id);
@@ -1128,7 +1146,7 @@
       if(editMode && path.bend){
         const bend = el('circle',{id:p.id+'-bend', class:'bend-handle', cx:path.bend.x, cy:path.bend.y, r:5,
           style:'cursor:'+(path.bend.axis==='x'?'ew-resize':'ns-resize')}, canvasGroup);
-        bend.addEventListener('mousedown', e=> startBendDrag(p, path.bend.axis, e));
+        bend.addEventListener('pointerdown', e=> startBendDrag(p, path.bend.axis, e));
       }
     });
 
@@ -1138,13 +1156,13 @@
       if(selected && selected.type==='equipo' && selected.id===eq.id) g.classList.add('selected');
       el('rect',{class:'equip-hit', x:-4, y:-14, width:t.w+8, height:t.h+50}, g);
       t.render(g, eq);
-      g.addEventListener('mousedown', e=>{
+      g.addEventListener('pointerdown', e=>{
         e.stopPropagation();
         if(!editMode){ handleSimClick(eq); return; }
         const pt = toSvgPoint(e);
         dragState = {id:eq.id, offX:pt.x-eq.x, offY:pt.y-eq.y, startX:e.clientX, startY:e.clientY, moved:false};
-        window.addEventListener('mousemove', onDragMove);
-        window.addEventListener('mouseup', onDragEndAndSelect);
+        window.addEventListener('pointermove', onDragMove);
+        window.addEventListener('pointerup', onDragEndAndSelect);
       });
       g.addEventListener('dblclick', e=>{
         e.stopPropagation();
@@ -1163,8 +1181,7 @@
         ports.forEach(port=>{
           const pt = portPoint(eq, port);
           const a = el('circle',{id:eq.id+'-anchor-'+port,class:'anchor-point', cx:pt.x, cy:pt.y, r:5}, canvasGroup);
-          a.addEventListener('mousedown', e=> startConnectDrag(eq, port, e));
-          a.addEventListener('mouseup', e=> finishConnectDrag(eq, port, e));
+          a.addEventListener('pointerdown', e=> startConnectDrag(eq, port, e));
         });
       });
     }
@@ -1209,8 +1226,8 @@
     const id = dragState && dragState.id;
     const moved = dragState && dragState.moved;
     dragState = null;
-    window.removeEventListener('mousemove', onDragMove);
-    window.removeEventListener('mouseup', onDragEndAndSelect);
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragEndAndSelect);
     if(moved) markAsChanged();
     if(id){
       selectItem('equipo', id);
@@ -1224,8 +1241,8 @@
   function startBendDrag(pipe, axis, evt){
     evt.stopPropagation();
     bendDragState = {pipeId: pipe.id, axis};
-    window.addEventListener('mousemove', onBendMove);
-    window.addEventListener('mouseup', onBendEnd);
+    window.addEventListener('pointermove', onBendMove);
+    window.addEventListener('pointerup', onBendEnd);
   }
   function onBendMove(e){
     if(!bendDragState) return;
@@ -1246,8 +1263,8 @@
   function onBendEnd(){
     if(bendDragState) markAsChanged();
     bendDragState = null;
-    window.removeEventListener('mousemove', onBendMove);
-    window.removeEventListener('mouseup', onBendEnd);
+    window.removeEventListener('pointermove', onBendMove);
+    window.removeEventListener('pointerup', onBendEnd);
     render();
   }
 
@@ -1258,8 +1275,8 @@
     const p1 = portPoint(eq, port);
     pendingConn = { fromId: eq.id, fromPort: port };
     tempLine = el('line', {class:'temp-connect', x1:p1.x, y1:p1.y, x2:p1.x, y2:p1.y}, canvasGroup);
-    window.addEventListener('mousemove', onConnectMove);
-    window.addEventListener('mouseup', onConnectCancel);
+    window.addEventListener('pointermove', onConnectMove);
+    window.addEventListener('pointerup', onConnectUp);
   }
   function onConnectMove(e){
     if(!pendingConn || !tempLine) return;
@@ -1269,10 +1286,23 @@
   function endConnectDrag(){
     if(tempLine){ tempLine.remove(); tempLine=null; }
     pendingConn = null;
-    window.removeEventListener('mousemove', onConnectMove);
-    window.removeEventListener('mouseup', onConnectCancel);
+    window.removeEventListener('pointermove', onConnectMove);
+    window.removeEventListener('pointerup', onConnectUp);
   }
-  function onConnectCancel(){ endConnectDrag(); }
+  // Al soltar (mouse o dedo), en vez de depender de que el evento "up" caiga
+  // justo sobre el anclaje de destino (con touch esto no es confiable, porque
+  // el navegador suele mandar el pointerup al elemento donde EMPEZÓ el gesto),
+  // miramos directamente qué hay debajo de la posición real de soltado.
+  function onConnectUp(e){
+    if(!pendingConn) return;
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const m = target && target.classList.contains('anchor-point') && target.id.match(/^(.+)-anchor-(left|right|top|bottom)$/);
+    if(m){
+      const eq = getEquipo(m[1]);
+      if(eq){ finishConnectDrag(eq, m[2], e); return; }
+    }
+    endConnectDrag();
+  }
   function finishConnectDrag(eq, port, evt){
     if(!pendingConn) return;
     evt.stopPropagation();
@@ -1343,16 +1373,20 @@
     const wasMoved = panState && panState.moved;
     panState = null;
     diagramWrap.classList.remove('panning');
-    window.removeEventListener('mousemove', onPanMove);
-    window.removeEventListener('mouseup', onPanEnd);
+    window.removeEventListener('pointermove', onPanMove);
+    window.removeEventListener('pointerup', onPanEnd);
     if(!wasMoved && editMode){ clearSelection(); render(); }
   }
 
-  svgEl.addEventListener('mousedown', e=>{
+  // pointerdown/move/up (en vez de mousedown/move/up) para que esto funcione
+  // igual con mouse, dedo (touch) o lápiz — Chrome en Android manda eventos de
+  // puntero unificados. touch-action:none en .diagram-wrap evita que el
+  // navegador interprete el arrastre como un scroll de la página.
+  svgEl.addEventListener('pointerdown', e=>{
     panState = {startClientX:e.clientX, startClientY:e.clientY, startViewX:viewBox.x, startViewY:viewBox.y, moved:false};
     diagramWrap.classList.add('panning');
-    window.addEventListener('mousemove', onPanMove);
-    window.addEventListener('mouseup', onPanEnd);
+    window.addEventListener('pointermove', onPanMove);
+    window.addEventListener('pointerup', onPanEnd);
   });
 
   // ================= PALETA DE FIGURAS PRECARGADAS (Causas / Efectos) =================
@@ -2082,7 +2116,7 @@
       const inner=document.createElement('div'); inner.className='th-inner';
       const handle=document.createElement('span'); handle.className='col-drag-handle'; handle.textContent='⋮⋮';
       handle.title='Arrastrar para reordenar';
-      handle.addEventListener('mousedown', e=>{ e.stopPropagation(); if(blockedByReadonly()) return; startColDrag(ef.id, e); });
+      handle.addEventListener('pointerdown', e=>{ e.stopPropagation(); if(blockedByReadonly()) return; startColDrag(ef.id, e); });
       const nameSpan=document.createElement('span'); nameSpan.textContent = ef.label||ef.id;
       inner.appendChild(handle); inner.appendChild(nameSpan);
       th.appendChild(inner);
@@ -2097,7 +2131,7 @@
       const inner=document.createElement('div'); inner.className='th-inner';
       const handle=document.createElement('span'); handle.className='row-drag-handle'; handle.textContent='⋮⋮';
       handle.title='Arrastrar para reordenar';
-      handle.addEventListener('mousedown', e=>{ e.stopPropagation(); if(blockedByReadonly()) return; startRowDrag(ca.id, e); });
+      handle.addEventListener('pointerdown', e=>{ e.stopPropagation(); if(blockedByReadonly()) return; startRowDrag(ca.id, e); });
       const nameSpan = document.createElement('span'); nameSpan.textContent = causaLabel(ca);
       nameSpan.style.cursor = 'pointer';
       nameSpan.title = 'Click para renombrar';
@@ -2202,8 +2236,8 @@
   let rowDragState = null;
   function startRowDrag(causaId, evt){
     rowDragState = {causaId};
-    window.addEventListener('mousemove', onRowDragMove);
-    window.addEventListener('mouseup', onRowDragEnd);
+    window.addEventListener('pointermove', onRowDragMove);
+    window.addEventListener('pointerup', onRowDragEnd);
   }
   function onRowDragMove(e){
     if(!rowDragState) return;
@@ -2224,8 +2258,8 @@
   function onRowDragEnd(){
     if(rowDragState) markAsChanged();
     rowDragState = null;
-    window.removeEventListener('mousemove', onRowDragMove);
-    window.removeEventListener('mouseup', onRowDragEnd);
+    window.removeEventListener('pointermove', onRowDragMove);
+    window.removeEventListener('pointerup', onRowDragEnd);
     renderCausaButtons();
   }
 
@@ -2233,8 +2267,8 @@
   let colDragState = null;
   function startColDrag(efectoId, evt){
     colDragState = {efectoId};
-    window.addEventListener('mousemove', onColDragMove);
-    window.addEventListener('mouseup', onColDragEnd);
+    window.addEventListener('pointermove', onColDragMove);
+    window.addEventListener('pointerup', onColDragEnd);
   }
   function onColDragMove(e){
     if(!colDragState) return;
@@ -2263,8 +2297,8 @@
   function onColDragEnd(){
     if(colDragState) markAsChanged();
     colDragState = null;
-    window.removeEventListener('mousemove', onColDragMove);
-    window.removeEventListener('mouseup', onColDragEnd);
+    window.removeEventListener('pointermove', onColDragMove);
+    window.removeEventListener('pointerup', onColDragEnd);
   }
 
   function renderCausaButtons(){
@@ -2315,6 +2349,19 @@
   document.getElementById('btnMatriz').addEventListener('click', showMatrixView);
   document.getElementById('btnBackToDiagramTop').addEventListener('click', showDiagramView);
 
+  // En pantallas angostas (celular), el panel lateral (registro/editor) es un
+  // cajón que se abre/cierra con este botón, o tocando afuera para cerrarlo.
+  document.getElementById('btnTogglePanel').addEventListener('click', ()=>{
+    document.body.classList.toggle('panel-open');
+  });
+  document.addEventListener('pointerdown', e=>{
+    if(!document.body.classList.contains('panel-open')) return;
+    const asideEl = document.querySelector('aside');
+    const toggleBtn = document.getElementById('btnTogglePanel');
+    if(asideEl.contains(e.target) || toggleBtn.contains(e.target)) return;
+    document.body.classList.remove('panel-open');
+  });
+
   document.getElementById('btnAddCausa').addEventListener('click', ()=>{
     if(blockedByReadonly()) return;
     openTextModal('Nombre de la causa (ej. Pulsador Emergencia PE-01):', '', (label)=>{
@@ -2343,8 +2390,8 @@
     if(e.key==='Enter') closeFloatEditor(true);
     if(e.key==='Escape') closeFloatEditor(false);
   });
-  document.getElementById('floatEditor').addEventListener('mousedown', e=> e.stopPropagation());
-  document.addEventListener('mousedown', e=>{
+  document.getElementById('floatEditor').addEventListener('pointerdown', e=> e.stopPropagation());
+  document.addEventListener('pointerdown', e=>{
     const box = document.getElementById('floatEditor');
     if(box.style.display!=='none' && !box.contains(e.target)) closeFloatEditor(true);
   });
