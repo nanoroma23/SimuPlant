@@ -737,6 +737,24 @@
         b.textContent = ready ? 'DISPONIBLE' : (run?'ENCENDIDO':'APAGADO');
         el('rect',{class:'selection-highlight',x:-6,y:-6,width:72,height:118,rx:8},g);
       }},
+    // Intercambiador: círculo (mismo diámetro que el ancho de un tanque, 50) con
+    // 4 puntos de anclaje. Izquierda↔derecha y arriba↔abajo son DOS pares
+    // independientes entre sí (como dos tubos que no se mezclan, solo
+    // intercambian calor) — cada par se comporta como una válvula siempre
+    // abierta: transparente para el caudal de SU lado, sin importar el otro.
+    // No tiene estado propio ni participa de la matriz de trips.
+    intercambiador: { name:'Intercambiador', category:'causa', w:50, h:50, blocksFlow:false, defaultState:{},
+      render(g,eq){
+        el('text',{id:eq.id+'-label',x:25,y:-8,'text-anchor':'middle',class:'equip-label'},g).textContent = eq.label||eq.id;
+        el('circle',{class:'equip-outline equip-fill',cx:25,cy:25,r:25},g);
+        // Zigzag de 4 tramos a 45°, arranca en el puerto izquierdo y termina en
+        // el derecho: sube 45°, baja recto (el doble de largo), sube recto
+        // (mismo largo que el anterior) y por último baja 45° hasta el puerto
+        // derecho — el símbolo clásico de serpentín dentro del círculo.
+        el('path',{d:'M 0 25 L 8.333 16.667 L 25 33.333 L 41.667 16.667 L 50 25',
+          fill:'none',stroke:'var(--equip-line)','stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'},g);
+        el('rect',{class:'selection-highlight',x:-5,y:-5,width:60,height:60,rx:16},g);
+      }},
     columna: { name:'Columna', category:'causa', w:55, h:150, defaultState:{nivel:'normal'},
       render(g,eq){
         el('rect',{class:'equip-outline equip-fill',x:0,y:0,width:55,height:150,rx:4},g);
@@ -1138,9 +1156,9 @@
     // Puntos de anclaje: solo visibles en modo edición, para dibujar caños a mano.
     if(editMode){
       state.equipos.forEach(eq=>{
-        // Solo tanques, separadores, columnas y acumuladores tienen 4 puntos (arriba, abajo, izq, der)
-        // Todos los demás solo tienen izquierda y derecha
-        const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna' || eq.tipo==='acumulador');
+        // Tanques, separadores, columnas, acumuladores e intercambiadores tienen
+        // 4 puntos (arriba, abajo, izq, der). Todos los demás solo izq/der.
+        const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna' || eq.tipo==='acumulador' || eq.tipo==='intercambiador');
         const ports = has4Ports ? ['left','right','top','bottom'] : ['left','right'];
         ports.forEach(port=>{
           const pt = portPoint(eq, port);
@@ -1178,7 +1196,7 @@
         if(bend && path.bend){ bend.setAttribute('cx',path.bend.x); bend.setAttribute('cy',path.bend.y); }
       }
     });
-    const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna' || eq.tipo==='acumulador');
+    const has4Ports = (eq.tipo==='tanque' || eq.tipo==='separador' || eq.tipo==='columna' || eq.tipo==='acumulador' || eq.tipo==='intercambiador');
     const portsToUpdate = has4Ports ? ['left','right','top','bottom'] : ['left','right'];
     portsToUpdate.forEach(port=>{
       const a = document.getElementById(eq.id+'-anchor-'+port);
@@ -1534,7 +1552,7 @@
     return eq.revealedState || eq.state;
   }
   function isTransparent(eq){
-    if(eq.tipo==='horno' || eq.tipo==='transmisor_flujo' || eq.tipo==='transmisor') return true;
+    if(eq.tipo==='horno' || eq.tipo==='transmisor_flujo' || eq.tipo==='transmisor' || eq.tipo==='intercambiador') return true;
     // Una válvula ABIERTA no tiene autoridad propia: es transparente, deja pasar
     // lo que haya del otro lado (incluido un bloqueo más lejano). Cerrada, en
     // cambio, sí es una autoridad dura que corta la búsqueda ahí mismo.
@@ -1565,6 +1583,20 @@
   // punto donde CONVERGEN varias ramas (ej. dos entradas a un horno) — eso se usa
   // para demorar un paso más el caño de salida, hasta que la última rama que
   // faltaba termine de asentarse.
+  // Puerto "pareja" del lado opuesto de un equipo: izquierda↔derecha,
+  // arriba↔abajo. Para equipos de 2 puertos (la mayoría) da lo mismo, porque
+  // el único otro puerto YA es el opuesto. Para el intercambiador (4 puertos,
+  // dos pares independientes) es lo que evita que el caudal de un par se
+  // mezcle con el del otro.
+  function pairedPort(port){
+    switch(port){
+      case 'left': return 'right';
+      case 'right': return 'left';
+      case 'top': return 'bottom';
+      case 'bottom': return 'top';
+    }
+    return null;
+  }
   function isBlockedBeyond(equipoId, excludePipeId, visited){
     visited = visited || new Set();
     const key = equipoId+'|'+excludePipeId;
@@ -1576,9 +1608,17 @@
 
     const excludedPipe = getPipe(excludePipeId);
     const cameInAsInlet = !!(excludedPipe && excludedPipe.to===equipoId);
+    // Puerto por el que se llegó a ESTE equipo (del lado de excludedPipe), y su
+    // pareja: solo se sigue buscando por caños conectados a esa pareja, nunca
+    // por cualquier otro puerto del equipo.
+    const arrivalPort = excludedPipe ? (cameInAsInlet ? excludedPipe.toPort : excludedPipe.fromPort) : null;
+    const requiredPort = arrivalPort ? pairedPort(arrivalPort) : null;
     const candidatePipes = state.canios.filter(p=>{
       if(p.id===excludePipeId) return false;
-      return cameInAsInlet ? p.from===equipoId : p.to===equipoId;
+      if(!(cameInAsInlet ? p.from===equipoId : p.to===equipoId)) return false;
+      if(requiredPort==null) return true; // sin info de puerto: comportamiento de siempre
+      const pPort = cameInAsInlet ? p.fromPort : p.toPort;
+      return pPort === requiredPort;
     });
     if(candidatePipes.length===0) return {blocked:false, junction:false}; // punta muerta: no bloquea
 
@@ -1939,7 +1979,8 @@
         if(causa) toggleCausa(causa.id, new Set(), true);
       }
       // Los recipientes con nivel (tanque/separador) son automáticos según el
-      // balance de caudal: el click sobre ellos no dispara nada por sí solo.
+      // balance de caudal, y el intercambiador no tiene estado propio: el click
+      // sobre cualquiera de estos no dispara nada por sí solo.
       return;
     }
 
