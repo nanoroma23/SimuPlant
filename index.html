@@ -188,6 +188,7 @@
     display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-dark);}
   .trip-cell.trip{background:var(--red);border-color:var(--red);}
   .trip-cell.manual{background:var(--orange);border-color:var(--orange);}
+  .trip-cell.auto{background:var(--green);border-color:var(--green);}
   .trip-cell:hover{border-color:var(--gray-4);}
   #matrizTableWrap{overflow:auto;flex:1;min-height:0;}
 
@@ -387,6 +388,13 @@
         <div style="display:flex;flex-direction:column;gap:2px;">
           <span style="font-weight:600;">Reposición manual</span>
           <span style="font-size:11px;color:var(--text-dim-light);">Permite reponer el efecto manualmente aunque la causa esté activa</span>
+        </div>
+      </div>
+      <div class="legend-row" style="align-items:flex-start;">
+        <div style="width:24px;height:24px;background:var(--green);border:1px solid var(--green);border-radius:4px;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-dark);">1</div>
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <span style="font-weight:600;">Auto-reposición</span>
+          <span style="font-size:11px;color:var(--text-dim-light);">Tripea igual que un trip automático, pero se repone solo apenas la causa se normaliza</span>
         </div>
       </div>
       <div class="legend-row" style="align-items:flex-start;">
@@ -945,8 +953,7 @@
           <div class="edit-row">
             <button id="btnFailPara" class="${failsArranca?'':'primary'}" style="flex:1;">Falla para${failsArranca?'':' ✓'}</button>
             <button id="btnFailArranca" class="${failsArranca?'primary':''}" style="flex:1;">Falla arranca${failsArranca?' ✓':''}</button>
-          </div>
-          <p class="hint" style="margin:0 0 6px;font-size:11px;">"Falla para": normalmente en marcha, el trip la detiene.<br>"Falla arranca": normalmente parada, el trip la arranca.</p>`;
+          </div>`;
       }
       p.innerHTML = `<p class="hint"><b>Equipo:</b></p>
         <div class="edit-row"><input type="text" id="editLabel" value="${eq.label||''}" placeholder="Etiqueta"></div>
@@ -1745,15 +1752,43 @@
     }
   }
 
+  // Repone un efecto a su posición normal automáticamente (sin esperar un click
+  // manual), si ya nada lo retiene — se llama cuando se normaliza una causa
+  // que lo afectaba con celda "auto" (1 verde en la matriz).
+  function restoreEfectoIfAuto(efectoId){
+    const eq = getEquipo(efectoId);
+    if(!eq) return;
+    if(!canManuallyRestore(efectoId)) return; // otra causa activa lo sigue reteniendo
+
+    if(eq.tipo==='valvula'){
+      const normalPos = (eq.failMode==='abre') ? 'closed' : 'open';
+      if(eq.state.estado === normalPos) return; // ya está en su normal
+      setValveState(efectoId, normalPos);
+      log(labelOf(efectoId)+' '+(normalPos==='open'?'abierta':'cerrada')+' automáticamente (reposición automática).','restore');
+      trippedEffects.delete(efectoId);
+      scheduleVisual(recomputeAllFlows);
+      updateEffectsAvailability();
+    } else if(eq.tipo==='bomba'||eq.tipo==='compresor'||eq.tipo==='horno'){
+      const normalRun = !runTripTarget(eq);
+      if(eq.state.run === normalRun) return; // ya está en su normal
+      setEquipoRunState(efectoId, normalRun);
+      const verbo = normalRun ? (eq.tipo==='horno'?'encendido':'arrancada') : (eq.tipo==='horno'?'apagado':'detenida');
+      log(labelOf(efectoId)+' '+verbo+' automáticamente (reposición automática).','restore');
+      trippedEffects.delete(efectoId);
+      scheduleVisual(recomputeAllFlows);
+      updateEffectsAvailability();
+    }
+  }
 
   function fireCausa(causaId, visited){
     visited = visited || new Set();
     const row = state.trips[causaId];
     if(!row) return;
     Object.keys(row).forEach(efId=>{
-      // Tripear tanto con trip automático (true) como con reposición manual ('manual')
-      // La diferencia está en si se puede normalizar después, no en si tripea o no
-      if(row[efId] === true || row[efId] === 'manual'){
+      // Tripea con trip automático (true), reposición manual ('manual') o
+      // auto-reposición ('auto'). La diferencia está en cómo se puede
+      // normalizar después, no en si tripea o no: los tres tripean igual.
+      if(row[efId] === true || row[efId] === 'manual' || row[efId] === 'auto'){
         tripEfecto(efId, visited);
       }
     });
@@ -1801,6 +1836,15 @@
       // próxima normalización 8), etc.), en vez de repetir el último número.
       nextCascadeLevel();
       log(label+' normalizada.', 'restore');
+      // Reposición automática: los efectos que esta causa afectaba con celda
+      // "auto" (1 verde en la matriz) vuelven a su normal ahora mismo, si ya
+      // nada más los retiene.
+      const row = state.trips[causaId];
+      if(row){
+        Object.keys(row).forEach(efId=>{
+          if(row[efId] === 'auto') restoreEfectoIfAuto(efId);
+        });
+      }
     }
 
     // Actualizar disponibilidad de todos los efectos
@@ -1828,11 +1872,13 @@
       const tripValue = state.trips[causa.id] && state.trips[causa.id][efectoId];
 
       // Si esta causa está activa y afecta al efecto
-      if(causa.active && (tripValue === true || tripValue === 'manual')){
+      if(causa.active && (tripValue === true || tripValue === 'manual' || tripValue === 'auto')){
         hasActiveCausesWithTrip = true;
 
-        // Si tiene trip automático (no manual), no se puede restaurar
-        if(tripValue === true){
+        // 'true' y 'auto' bloquean la reposición manual mientras la causa siga
+        // activa (son trips reales); 'auto' solo se diferencia en que, apenas
+        // la causa se normalice, se repone sola — no hace falta tocarla.
+        if(tripValue === true || tripValue === 'auto'){
           allActiveCausesHaveManualPermission = false;
         }
       }
@@ -2039,36 +2085,47 @@
         const td=document.createElement('td');
         const cell=document.createElement('div'); cell.className='trip-cell';
         const tripValue = state.trips[ca.id] && state.trips[ca.id][ef.id];
-        // tripValue puede ser: undefined/false (vacío), true (trip automático), 'manual' (reposición manual)
+        // tripValue puede ser: undefined/false (vacío), true (trip automático,
+        // reposición manual), 'manual' (permite reponer a mano aunque la causa
+        // siga activa), 'auto' (trip normal, pero se repone SOLO apenas la
+        // causa se normaliza — sin esperar un click).
         if(tripValue === true){
           cell.classList.add('trip');
         } else if(tripValue === 'manual'){
           cell.classList.add('manual');
           cell.textContent = '1';
+        } else if(tripValue === 'auto'){
+          cell.classList.add('auto');
+          cell.textContent = '1';
         }
-        cell.title = causaLabel(ca)+' → '+(ef.label||ef.id)+'\nClick: Trip → Manual (1) → Vacío';
+        cell.title = causaLabel(ca)+' → '+(ef.label||ef.id)+'\nClick: Trip → Manual (1 naranja) → Auto-reposición (1 verde) → Vacío';
         cell.addEventListener('click', ()=>{
           if(blockedByReadonly()) return;
           state.trips[ca.id] = state.trips[ca.id] || {};
           const current = state.trips[ca.id][ef.id];
 
-          // Ciclo: vacío → trip → manual → vacío
+          // Ciclo: vacío → trip → manual → auto → vacío
           if(!current || current === false){
             state.trips[ca.id][ef.id] = true; // Trip
           } else if(current === true){
             state.trips[ca.id][ef.id] = 'manual'; // Manual
+          } else if(current === 'manual'){
+            state.trips[ca.id][ef.id] = 'auto'; // Auto-reposición
           } else {
             state.trips[ca.id][ef.id] = false; // Vacío
           }
 
           // Actualizar visualmente
-          cell.classList.remove('trip', 'manual');
+          cell.classList.remove('trip', 'manual', 'auto');
           cell.textContent = '';
           const newValue = state.trips[ca.id][ef.id];
           if(newValue === true){
             cell.classList.add('trip');
           } else if(newValue === 'manual'){
             cell.classList.add('manual');
+            cell.textContent = '1';
+          } else if(newValue === 'auto'){
+            cell.classList.add('auto');
             cell.textContent = '1';
           }
 
