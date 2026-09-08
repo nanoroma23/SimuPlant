@@ -27,7 +27,7 @@
     --text-dim-dark:  var(--gray-2);
 
     --green:#3ecf6a; --orange:#ff9d3b; --red:#ff4d4f;
-    --tint-green:#d7f0dd; --tint-orange:#f7ddb8; --tint-red:#f2caca;
+    --tint-green:#d7f0dd; --tint-orange:#f7a94a; --tint-red:#f2caca;
 
     --mono:'SF Mono','Consolas','Menlo',monospace;
   }
@@ -40,6 +40,8 @@
   .topbar-left{display:flex;gap:6px;align-items:center;}
   .topbar-right{display:flex;gap:6px;align-items:center;}
   .topbar-center{flex:1;display:flex;justify-content:center;align-items:center;}
+  #btnRenameProject{background:none !important;border:none !important;box-shadow:none !important;}
+  #btnRenameProject:hover{background:none !important;opacity:0.75 !important;}
   .project-title-display{font-size:15px;font-weight:600;color:var(--text-light);letter-spacing:0.3px;}
   .stage{grid-column:1;grid-row:2;position:relative;padding:0;display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;}
   aside{grid-column:2;grid-row:1 / -1;width:340px;}
@@ -89,6 +91,9 @@
 
   .pump-body{fill:var(--equip-fill);transition:stroke .4s ease, fill .4s ease;}
   .pump-body.run{stroke:var(--green);} .pump-body.stop{stroke:var(--red);fill:var(--tint-red);} .pump-body.ready{stroke:var(--orange);fill:var(--tint-orange);}
+  /* El interior se pinta naranja cuando el equipo está "disponible", sin tocar
+     el borde (que sigue mostrando su color literal: verde si corre, rojo si no). */
+  .pump-body.ready-fill{fill:var(--tint-orange) !important;}
   .pump-blade{transform-origin:center;transition:opacity .3s;}
   .pump-blade.run{opacity:1;} .pump-blade.stop{opacity:.3;} .pump-blade.ready{opacity:.3;}
   @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
@@ -100,6 +105,8 @@
   .valve-tri.closing{fill:var(--tint-orange);stroke:var(--orange);stroke-width:3;}
   .valve-tri.closed{fill:var(--tint-red);stroke:var(--red);stroke-width:3;}
   .valve-tri.ready{fill:var(--tint-orange);stroke:var(--orange);stroke-width:3;}
+  /* Idem para la válvula: interior naranja cuando está disponible, borde literal. */
+  .valve-tri.ready-fill{fill:var(--tint-orange) !important;}
   .valve-outline{fill:none;stroke:var(--equip-line);stroke-width:2;}
   .bota-line{fill:none;stroke-width:2.5;transition:stroke .4s ease;}
   .bota-line.normal{stroke:var(--equip-line);}
@@ -296,6 +303,7 @@
     </div>
     <div class="topbar-center">
       <span id="projectTitle" class="project-title-display" style="display:none;"></span>
+      <button id="btnRenameProject" title="Renombrar proyecto" style="display:none;background:none;border:none;box-shadow:none;cursor:pointer;font-size:13px;margin-left:10px;padding:2px 4px;opacity:0.4;filter:grayscale(1);">✏️</button>
     </div>
     <div class="topbar-right">
       <div class="transition-control" title="Tiempo entre cada paso de la cascada visual">
@@ -582,26 +590,30 @@
       render(g,eq){
         const run = eq.state.run;
         const ready = eq.state.ready || false;
-        const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
+        // Cuerpo con borde de color literal (marcha=verde, parada=roja); el
+        // interior (relleno) pasa a naranja cuando está "disponible", además
+        // de la palabra del badge, para que se note más a simple vista.
+        const stateClass = run ? 'run' : 'stop';
+        const bodyClass = stateClass + (ready ? ' ready-fill' : '');
         el('text',{id:eq.id+'-failmode',x:28,y:-8,'text-anchor':'middle','font-size':10,'font-weight':'700',
           fill:'var(--equip-line)'},g).textContent = eq.failMode==='arranca'?'FA':'FP';
         // Círculo principal
-        el('circle',{id:eq.id+'-body',class:'pump-body '+stateClass,cx:28,cy:28,r:20,'stroke-width':2.5},g);
+        el('circle',{id:eq.id+'-body',class:'pump-body '+bodyClass,cx:28,cy:28,r:20,'stroke-width':2.5},g);
         // Círculo chico adentro
         el('circle',{cx:28,cy:28,r:6,fill:'none',stroke:'var(--equip-line)','stroke-width':2},g);
         // Fondo de la salida rectangular (primero el relleno)
-        el('rect',{class:'pump-body '+stateClass,x:28,y:8,width:25,height:12.5,'stroke-width':0},g);
+        el('rect',{class:'pump-body '+bodyClass,x:28,y:8,width:25,height:12.5,'stroke-width':0},g);
         // Recta tangente arriba (del color de la bomba)
-        el('line',{class:'pump-body '+stateClass,x1:28,y1:8,x2:53,y2:8,'stroke-width':2.5},g);
+        el('line',{class:'pump-body '+bodyClass,x1:28,y1:8,x2:53,y2:8,'stroke-width':2.5},g);
         // Recta vertical hacia abajo
-        el('line',{class:'pump-body '+stateClass,x1:53,y1:8,x2:53,y2:20.5,'stroke-width':2.5},g);
+        el('line',{class:'pump-body '+bodyClass,x1:53,y1:8,x2:53,y2:20.5,'stroke-width':2.5},g);
         // Recta horizontal hacia la izquierda hasta tocar el círculo
-        el('line',{class:'pump-body '+stateClass,x1:53,y1:20.5,x2:46.5,y2:20.5,'stroke-width':2.5},g);
+        el('line',{class:'pump-body '+bodyClass,x1:53,y1:20.5,x2:46.5,y2:20.5,'stroke-width':2.5},g);
         // Base trapezoidal (contorno negro)
         el('path',{d:'M20,48 L16,54 L40,54 L36,48',fill:'none',stroke:'var(--equip-line)','stroke-width':2.5,'stroke-linejoin':'miter'},g);
         el('text',{id:eq.id+'-label',x:28,y:76,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+stateClass,x:28,y:90,'text-anchor':'middle'},g);
-        b.textContent = run?'EN MARCHA':(ready?'DISPONIBLE':'DETENIDA');
+        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+(ready?'ready':stateClass),x:28,y:90,'text-anchor':'middle'},g);
+        b.textContent = ready ? 'DISPONIBLE' : (run?'EN MARCHA':'DETENIDA');
         el('rect',{class:'selection-highlight',x:-6,y:-6,width:68,height:68,rx:8},g);
       }},
     separador: { name:'Separador', category:'causa', w:110, h:46, defaultState:{nivel:'normal'},
@@ -667,42 +679,54 @@
       render(g,eq){
         const st = eq.state.estado;
         const ready = eq.state.ready || false;
-        const displayState = (st==='closed' && ready) ? 'ready' : st;
+        // El cuerpo (los triángulos) siempre refleja el estado físico literal:
+        // abierta=verde, cerrada=roja, cerrando=transición. Nunca se pinta de
+        // naranja por estar "disponible" — esa señal va solo en la palabra del
+        // badge, para no perder la lectura instantánea verde=fluye/rojo=no fluye.
+        // "Disponible" solo tiene sentido en el badge cuando la válvula está en
+        // una posición estable (no a mitad de una transición de cascada).
+        const badgeReady = st!=='closing' && ready;
+        const badgeClass = badgeReady ? 'ready' : st;
+        const bodyClass = st + (badgeReady ? ' ready-fill' : '');
         el('text',{id:eq.id+'-failmode',x:16,y:-8,'text-anchor':'middle','font-size':10,'font-weight':'700',
           fill:'var(--equip-line)'},g).textContent = eq.failMode==='abre'?'FO':'FC';
-        el('polygon',{id:eq.id+'-triL',class:'valve-tri '+displayState,points:'0,0 0,28 16,14'},g);
-        el('polygon',{id:eq.id+'-triR',class:'valve-tri '+displayState,points:'32,0 32,28 16,14'},g);
+        el('polygon',{id:eq.id+'-triL',class:'valve-tri '+bodyClass,points:'0,0 0,28 16,14'},g);
+        el('polygon',{id:eq.id+'-triR',class:'valve-tri '+bodyClass,points:'32,0 32,28 16,14'},g);
         el('text',{id:eq.id+'-label',x:16,y:44,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'valve-badge '+displayState,x:16,y:57,'text-anchor':'middle'},g);
-        b.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':(ready?'DISPONIBLE':'CERRADA');
+        const b = el('text',{id:eq.id+'-badge',class:'valve-badge '+badgeClass,x:16,y:57,'text-anchor':'middle'},g);
+        b.textContent = badgeReady ? 'DISPONIBLE' : (st==='open'?'ABIERTA':st==='closing'?'CERRANDO':'CERRADA');
         el('rect',{class:'selection-highlight',x:-6,y:-14,width:44,height:78,rx:6},g);
       }},
     compresor: { name:'Compresor', category:'efecto', w:70, h:56, blocksFlow:true, defaultState:{run:true},
       render(g,eq){
         const run = eq.state.run!==false;
         const ready = eq.state.ready || false;
-        const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
+        // Cuerpo con borde de color literal; el interior pasa a naranja si está disponible.
+        const stateClass = run ? 'run' : 'stop';
+        const bodyClass = stateClass + (ready ? ' ready-fill' : '');
         el('text',{id:eq.id+'-failmode',x:35,y:-16,'text-anchor':'middle','font-size':10,'font-weight':'700',
           fill:'var(--equip-line)'},g).textContent = eq.failMode==='arranca'?'FA':'FP';
-        el('polygon',{id:eq.id+'-body',class:'pump-body '+stateClass,
+        el('polygon',{id:eq.id+'-body',class:'pump-body '+bodyClass,
           points:'0,0 0,40 70,30 70,10','stroke-width':3},g);
         el('text',{id:eq.id+'-label',x:35,y:-6,'text-anchor':'middle',class:'equip-label'},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+stateClass,x:35,y:56,'text-anchor':'middle','font-size':10},g);
-        b.textContent = run?'EN MARCHA':(ready?'DISPONIBLE':'DETENIDA');
+        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+(ready?'ready':stateClass),x:35,y:56,'text-anchor':'middle','font-size':10},g);
+        b.textContent = ready ? 'DISPONIBLE' : (run?'EN MARCHA':'DETENIDA');
         el('rect',{class:'selection-highlight',x:-5,y:-5,width:80,height:74,rx:6},g);
       }},
     horno: { name:'Horno', category:'efecto', w:60, h:96, blocksFlow:false, defaultState:{run:true},
       render(g,eq){
         const run = eq.state.run;
         const ready = eq.state.ready || false;
-        const stateClass = run ? 'run' : (ready ? 'ready' : 'stop');
-        el('path',{id:eq.id+'-body',class:'pump-body '+stateClass,
+        // Cuerpo con borde de color literal; el interior pasa a naranja si está disponible.
+        const stateClass = run ? 'run' : 'stop';
+        const bodyClass = stateClass + (ready ? ' ready-fill' : '');
+        el('path',{id:eq.id+'-body',class:'pump-body '+bodyClass,
           d:'M26,0 L34,0 L34,10 L56,40 L56,74 L4,74 L4,40 L26,10 Z','stroke-width':3},g);
         el('path',{id:eq.id+'-flame',d:'M30 48 C22 60 20 68 30 76 C40 68 38 60 30 48 Z',
           fill: run?'var(--orange)':'var(--equip-line)', opacity: run?1:0.35},g);
         el('text',{id:eq.id+'-label',x:30,y:88,'text-anchor':'middle',class:'equip-label','font-size':12},g).textContent = eq.label||eq.id;
-        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+stateClass,x:30,y:102,'text-anchor':'middle'},g);
-        b.textContent = run?'ENCENDIDO':(ready?'DISPONIBLE':'APAGADO');
+        const b = el('text',{id:eq.id+'-badge',class:'pump-badge '+(ready?'ready':stateClass),x:30,y:102,'text-anchor':'middle'},g);
+        b.textContent = ready ? 'DISPONIBLE' : (run?'ENCENDIDO':'APAGADO');
         el('rect',{class:'selection-highlight',x:-6,y:-6,width:72,height:118,rx:8},g);
       }},
     columna: { name:'Columna', category:'causa', w:55, h:150, defaultState:{nivel:'normal'},
@@ -1410,19 +1434,26 @@
     if(!group||!badge) return false;
     const ready = eq.state.ready || false;
     scheduleVisual(()=>{
-      const stateClass = running ? 'run' : (ready ? 'ready' : 'stop');
+      const stateClass = running ? 'run' : 'stop'; // borde: color literal, nunca naranja
       // Actualiza TODOS los elementos "pump-body" del grupo (círculo, rectángulo,
       // líneas...), no solo el que tiene el id "-body" — algunos diseños de bomba
-      // usan varias formas para dibujar el cuerpo.
+      // usan varias formas para dibujar el cuerpo. El interior (relleno) pasa a
+      // naranja con la clase aparte "ready-fill" cuando está disponible, sin
+      // tocar el color del borde (que sigue siendo el literal run/stop).
       group.querySelectorAll('.pump-body').forEach(el=>{
-        el.classList.remove('run','stop','ready'); el.classList.add(stateClass);
+        el.classList.remove('run','stop','ready','ready-fill'); el.classList.add(stateClass);
+        if(ready) el.classList.add('ready-fill');
       });
       const blade=document.getElementById(id+'-blade');
       if(blade){ blade.classList.remove('run','stop','ready'); blade.classList.add(stateClass); }
       const flame=document.getElementById(id+'-flame');
       if(flame){ flame.setAttribute('fill', running?'var(--orange)':'var(--equip-line)'); flame.setAttribute('opacity', running?'1':'0.35'); }
-      badge.classList.remove('run','stop','ready'); badge.classList.add(stateClass);
-      badge.textContent = running ? (eq.tipo==='horno'?'ENCENDIDO':'EN MARCHA') : (ready?'DISPONIBLE':(eq.tipo==='horno'?'APAGADO':'DETENIDA'));
+      // El badge sí puede decir "DISPONIBLE" en naranja aunque el borde se
+      // mantenga con su color literal (run/stop) — es la palabra (y ahora
+      // también el relleno) la que avisa que se puede reponer.
+      const badgeClass = ready ? 'ready' : stateClass;
+      badge.classList.remove('run','stop','ready'); badge.classList.add(badgeClass);
+      badge.textContent = ready ? 'DISPONIBLE' : (running ? (eq.tipo==='horno'?'ENCENDIDO':'EN MARCHA') : (eq.tipo==='horno'?'APAGADO':'DETENIDA'));
       // Recién ACÁ (cuando esto se ve en pantalla) el equipo cuenta como
       // autoridad cambiada para el cálculo de caños — no antes.
       if(eq.revealedState) eq.revealedState.run = running;
@@ -1437,10 +1468,18 @@
     if(!l||!r||!badge) return false;
     const ready = eq.state.ready || false;
     scheduleVisual(()=>{
-      const displayState = (st==='closed' && ready) ? 'ready' : st;
-      [l,r].forEach(x=>{ x.classList.remove('open','closing','closed','ready'); x.classList.add(displayState); });
-      badge.classList.remove('open','closing','closed','ready'); badge.classList.add(displayState);
-      badge.textContent = st==='open'?'ABIERTA':st==='closing'?'CERRANDO':(ready?'DISPONIBLE':'CERRADA');
+      // Triángulos: borde y forma con color literal siempre; el interior
+      // (relleno) pasa a naranja con "ready-fill" cuando está disponible.
+      const badgeReady = st!=='closing' && ready;
+      [l,r].forEach(x=>{
+        x.classList.remove('open','closing','closed','ready','ready-fill'); x.classList.add(st);
+        if(badgeReady) x.classList.add('ready-fill');
+      });
+      // El badge sí puede decir "DISPONIBLE" en naranja (solo si no está en
+      // medio de una transición de cascada), manteniendo el borde literal.
+      const badgeClass = badgeReady ? 'ready' : st;
+      badge.classList.remove('open','closing','closed','ready'); badge.classList.add(badgeClass);
+      badge.textContent = badgeReady ? 'DISPONIBLE' : (st==='open'?'ABIERTA':st==='closing'?'CERRANDO':'CERRADA');
       // Recién ACÁ (cuando esto se ve en pantalla) la válvula cuenta como
       // autoridad cambiada para el cálculo de caños — no antes.
       if(eq.revealedState) eq.revealedState.estado = st;
@@ -1811,22 +1850,22 @@
     state.equipos.forEach(eq => {
       if(TYPE_DEFS[eq.tipo].category !== 'efecto') return;
 
-      // Verificar si está tripeado
-      if(!trippedEffects.has(eq.id)){
+      // Verificar si está desviado de su posición normal (por trip automático o
+      // por acción manual, da igual la causa: lo que importa es si HOY no está
+      // en su posición normal según el modo de falla configurado).
+      const isDeviated = (eq.tipo==='valvula' && ((eq.failMode==='abre' && eq.state.estado==='open') || (eq.failMode==='cierra' && eq.state.estado==='closed'))) ||
+                         ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && eq.state.run===runTripTarget(eq));
+
+      if(!isDeviated){
         eq.state.ready = false;
         return;
       }
 
-      // Verificar si está en posición de falla
-      const isInFailPosition = (eq.tipo==='valvula' && ((eq.failMode==='abre' && eq.state.estado==='open') || (eq.failMode==='cierra' && eq.state.estado==='closed'))) ||
-                               ((eq.tipo==='bomba' || eq.tipo==='compresor' || eq.tipo==='horno') && eq.state.run===runTripTarget(eq));
-
-      if(!isInFailPosition){
-        eq.state.ready = false;
-        return;
-      }
-
-      // Está tripeado y en posición de falla: verificar disponibilidad
+      // Desviado de su normal: "disponible" si nada te impide reponerlo ahora
+      // mismo. canManuallyRestore ya devuelve true directamente si nunca fue
+      // tripeado (o sea, si la desviación es puramente manual) — así que esto
+      // cubre tanto "tripeó y la causa ya se puede reponer" como "lo forcé yo
+      // a mano sin ninguna causa de por medio".
       eq.state.ready = canManuallyRestore(eq.id);
     });
   }
@@ -2278,6 +2317,7 @@
 
   function updateProjectTitle(){
     const titleEl = document.getElementById('projectTitle');
+    const renameBtn = document.getElementById('btnRenameProject');
     if(currentProjectName){
       titleEl.textContent = currentProjectName;
       titleEl.style.display = 'block';
@@ -2285,7 +2325,21 @@
       titleEl.textContent = 'Sin título';
       titleEl.style.display = 'block';
     }
+    // El lápiz para renombrar solo se muestra si el proyecto actual se puede editar
+    // (no tiene sentido ofrecer renombrar un proyecto en modo solo lectura).
+    renameBtn.style.display = canEditCurrentProject ? 'inline-block' : 'none';
   }
+
+  document.getElementById('btnRenameProject').addEventListener('click', ()=>{
+    if(blockedByReadonly()) return;
+    openTextModal('Nuevo nombre del proyecto:', currentProjectName || '', (nombre)=>{
+      const trimmed = (nombre||'').trim();
+      if(!trimmed) return;
+      currentProjectName = trimmed;
+      updateProjectTitle();
+      markAsChanged(); // se persiste con el próximo "Guardar", como cualquier otro cambio
+    });
+  });
 
   async function checkProjectPermissions(){
     // Si el proyecto es de solo lectura y el usuario no es admin ni el dueño, deshabilitar edición.
@@ -2305,6 +2359,7 @@
       btnSave.disabled = false;
       btnSave.title = 'Guardar proyecto en Supabase';
       readonlyIndicator.style.display = 'none';
+      updateProjectTitle(); // sincroniza el lápiz de renombrar con el permiso recién confirmado
     }
 
     if(!currentProjectId){
@@ -2339,6 +2394,7 @@
       btnSave.disabled = true;
       btnSave.title = 'No tenés permisos para guardar cambios';
       readonlyIndicator.style.display = 'block';
+      updateProjectTitle(); // oculta el lápiz de renombrar: es solo lectura
     } else {
       setEditable();
     }
@@ -2452,9 +2508,14 @@
             if(currentProjectId===proj.id){
               // El proyecto que se acaba de borrar es el que está abierto en el
               // editor: hay que resetear todo (si no, "Guardar" después crearía
-              // silenciosamente un proyecto nuevo con el contenido del borrado).
+              // silenciosamente un proyecto nuevo con el contenido del borrado)
+              // y mostrar el menú de inicio, como si acabaras de abrir el programa.
               loadStateIntoApp({equipos:[], canios:[], trips:{}, causas:[]}, null, '', null);
-              alert('El proyecto "'+proj.name+'" fue eliminado. Se abrió un proyecto nuevo en blanco.');
+              document.getElementById('projectTitle').style.display = 'none';
+              document.getElementById('projectsModal').style.display = 'none';
+              document.getElementById('inicioModal').style.display = 'flex';
+              refreshCloudStatusAndList(false); // refresca la lista tal como se ve en el menú de inicio
+              return;
             }
             refreshCloudStatusAndList(isProjectsModal);
           });
