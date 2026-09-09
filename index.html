@@ -80,6 +80,9 @@
   .diagram-wrap{position:relative;background:var(--bg-diagram);flex:1;display:flex;align-items:center;justify-content:center;min-height:0;overflow:hidden;cursor:grab;touch-action:none;}
   .diagram-wrap.panning{cursor:grabbing;}
   .zoom-controls{position:absolute;bottom:14px;right:14px;z-index:10;display:flex;flex-direction:column;gap:4px;}
+  .level-sim-toggle{position:absolute;bottom:14px;left:14px;z-index:10;display:flex;align-items:center;gap:6px;
+    background:var(--bg-panel-alt);border:1px solid var(--border-panel);border-radius:6px;padding:6px 10px;
+    font-size:12px;cursor:pointer;user-select:none;box-shadow:0 2px 6px rgba(0,0,0,.35);}
   .zoom-controls button{width:34px;height:34px;padding:0;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center;}
   svg{width:100%;height:100%;max-height:100%;}
   svg text{user-select:none;}
@@ -352,6 +355,10 @@
         <button id="btnZoomOut" title="Alejar">−</button>
         <button id="btnZoomReset" title="Restablecer zoom">⤢</button>
       </div>
+      <label class="level-sim-toggle" for="chkLevelSim" title="Simular nivel de tanques automáticamente según el balance de caudal">
+        <input type="checkbox" id="chkLevelSim">
+        Simular nivel de tanques
+      </label>
     </div>
 
     <div class="causa-bar-wrap" id="causaBarWrap">
@@ -1347,6 +1354,17 @@
     applyViewBox();
   });
 
+  // Checkbox flotante: habilita/deshabilita que el nivel de los tanques suba o
+  // baje solo, según el balance de caudal de entrada/salida.
+  document.getElementById('chkLevelSim').addEventListener('change', e=>{
+    levelSimEnabled = e.target.checked;
+    if(!levelSimEnabled){
+      // Al apagarlo, cancelar cualquier cambio de nivel que estuviera esperando.
+      Object.keys(levelDriftTimers).forEach(id=>clearTimeout(levelDriftTimers[id]));
+      for(const k in levelDriftTimers) delete levelDriftTimers[k];
+    }
+  });
+
   // Zoom con la rueda del mouse, centrado en el cursor.
   diagramWrap.addEventListener('wheel', e=>{
     e.preventDefault();
@@ -1830,32 +1848,64 @@
   }
 
   // ---- Nivel de recipientes: sube/baja según el balance de caudal de entrada/salida ----
+  // Controlado por el checkbox flotante "Simular nivel de tanques" (abajo a la
+  // izquierda del diagrama). Apagado por defecto: no cambia nada del
+  // comportamiento existente hasta que Mariano lo activa a propósito.
+  let levelSimEnabled = false;
   const LEVEL_DRIFT_MS = 2500;
   const levelDriftTimers = {};
   function checkLevelDrift(vesselId){
-    // Desactivado a pedido: el nivel de tanques/separadores/acumuladores ya NO cambia
-    // solo porque se corte o restablezca el caudal de entrada/salida. El único disparador
-    // válido para un trip de nivel (alto o bajo) es la activación manual de la causa
-    // (botonera de causas o click en el diagrama). Se deja la función vacía en vez de
-    // borrar el llamado desde setPipeState, por si en el futuro se quiere reactivar.
-    return;
+    if(!levelSimEnabled) return;
+    const eq = getEquipo(vesselId);
+    if(!eq || !('nivel' in eq.state)) return; // no es un recipiente con nivel
+
+    // Espera LEVEL_DRIFT_MS antes de aplicar el cambio (no es instantáneo), y
+    // si el balance de caudal vuelve a cambiar antes de que se cumpla, reinicia
+    // la espera — evita parpadeos durante una cascada de varios pasos.
+    if(levelDriftTimers[vesselId]){ clearTimeout(levelDriftTimers[vesselId]); }
+    levelDriftTimers[vesselId] = setTimeout(()=>{
+      delete levelDriftTimers[vesselId];
+      if(!levelSimEnabled) return; // se pudo haber apagado mientras esperaba
+      if(!getEquipo(vesselId)) return; // se pudo haber borrado mientras esperaba
+
+      const inPipes = state.canios.filter(p=>p.to===vesselId);
+      const outPipes = state.canios.filter(p=>p.from===vesselId);
+      const hasIn = inPipes.some(p=>p.state==='flow');
+      const hasOut = outPipes.some(p=>p.state==='flow');
+
+      if(hasIn && hasOut) setVesselLevel(vesselId, 'normal');
+      else if(!hasIn && hasOut) setVesselLevel(vesselId, 'bajo');
+      else if(hasIn && !hasOut) setVesselLevel(vesselId, 'alto');
+      // Si ninguno de los dos tiene caudal (todo cortado), no se toca el nivel:
+      // sin caudal para ningún lado, el nivel se queda tal cual está.
+    }, LEVEL_DRIFT_MS);
   }
   function setVesselLevel(id, nivel){
     const eq = getEquipo(id);
     if(!eq || eq.state.nivel===nivel) return;
-    setTankState(id, nivel);
-    const label = labelOf(id);
-    log(nivel==='bajo' ? (label+' entra en BAJO NIVEL.') : nivel==='alto' ? (label+' entra en ALTO NIVEL.') : (label+' nivel normalizado.'),
-      nivel==='normal' ? 'restore' : 'cause');
+
     if(nivel==='normal'){
-      state.causas.filter(c=>c.linkedEquipoId===id && (c.linkedCondition==='bajo'||c.linkedCondition==='alto')).forEach(c=>{ c.active=false; });
-      renderCausaButtons();
+      // Normalizar: si hay una causa de nivel (bajo/alto) activa para este
+      // recipiente, se desactiva pasando por toggleCausa — así se dispara toda
+      // la cascada normal (log, numeración, y la auto-reposición de celdas
+      // verdes en la matriz). Si no hay causa vinculada, solo se normaliza el
+      // dibujo a mano.
+      const activeCausas = state.causas.filter(c=>c.linkedEquipoId===id && (c.linkedCondition==='bajo'||c.linkedCondition==='alto') && c.active);
+      if(activeCausas.length){
+        activeCausas.forEach(c=> toggleCausa(c.id, new Set(), false));
+      } else {
+        setTankState(id, 'normal');
+        log(labelOf(id)+' nivel normalizado.', 'restore');
+      }
     } else {
       const causa = state.causas.find(c=>c.linkedEquipoId===id && c.linkedCondition===nivel);
       if(causa && !causa.active){
-        causa.active = true;
-        fireCausa(causa.id);
-        renderCausaButtons();
+        toggleCausa(causa.id, new Set(), false); // ya dibuja el nivel y dispara los trips
+      } else if(!causa){
+        // No hay causa vinculada a esta condición: igual se refleja el nivel en
+        // el dibujo, aunque no haya ningún trip configurado para disparar.
+        setTankState(id, nivel);
+        log((nivel==='bajo' ? labelOf(id)+' entra en BAJO NIVEL.' : labelOf(id)+' entra en ALTO NIVEL.'), 'cause');
       }
     }
   }
