@@ -1690,13 +1690,24 @@
     if(eq.tipo==='valvula') return revealed(eq).estado==='open';
     return false;
   }
-  function isBlocking(eq){
+  function isBlocking(eq, arrivalPort, cameInAsInlet){
     // Solo se evalúa sobre autoridades reales (no transparentes). Si llegamos acá
     // con una válvula es porque está cerrada (si estuviera abierta, sería
     // transparente y ni siquiera se habría detenido la búsqueda en ella).
     if(eq.tipo==='valvula') return true;
     if(eq.tipo==='bomba' || eq.tipo==='compresor') return !revealed(eq).run;
-    return false; // recipientes nunca bloquean
+    // Un recipiente (tanque/separador/columna/acumulador) en BAJO NIVEL solo
+    // bloquea sus salidas de costado o abajo MIENTRAS ADEMÁS no tenga caudal de
+    // ingreso en este mismo instante — no por el solo hecho de estar en bajo
+    // nivel. Apenas vuelve a entrar caudal, la salida se destraba enseguida (y
+    // de yapa el nivel se normaliza solo, en vez de saltar directo a "alto").
+    // Nunca bloquea actuando como destino (sigue aceptando lo que le entre), ni
+    // por una salida de arriba (típicamente vapor, no depende del líquido).
+    if('nivel' in eq.state && eq.state.nivel==='bajo' && !cameInAsInlet && arrivalPort!=='top'){
+      const hasInletFlowNow = state.canios.some(p=>p.to===eq.id && p.state==='flow');
+      if(!hasInletFlowNow) return true;
+    }
+    return false; // el resto de los casos de un recipiente: nunca bloquea
   }
   // Busca la autoridad más cercana a partir de un equipo, sin volver por el caño
   // desde el que se vino. Atraviesa instrumentos transparentes.
@@ -1733,14 +1744,19 @@
     visited.add(key);
     const eq = getEquipo(equipoId);
     if(!eq) return {blocked:false, junction:false};
-    if(!isTransparent(eq)) return {blocked:isBlocking(eq), junction:false};
 
+    // Puerto por el que se llegó a ESTE equipo (del lado de excludedPipe), y si
+    // ese lado es una entrada o una salida de equipoId. Se calcula ACÁ (antes de
+    // decidir si es una autoridad o es transparente) porque isBlocking también
+    // lo necesita para el caso del recipiente en bajo nivel.
     const excludedPipe = getPipe(excludePipeId);
     const cameInAsInlet = !!(excludedPipe && excludedPipe.to===equipoId);
-    // Puerto por el que se llegó a ESTE equipo (del lado de excludedPipe), y su
-    // pareja: solo se sigue buscando por caños conectados a esa pareja, nunca
-    // por cualquier otro puerto del equipo.
     const arrivalPort = excludedPipe ? (cameInAsInlet ? excludedPipe.toPort : excludedPipe.fromPort) : null;
+
+    if(!isTransparent(eq)) return {blocked:isBlocking(eq, arrivalPort, cameInAsInlet), junction:false};
+
+    // Puerto pareja del lado opuesto: solo se sigue buscando por caños
+    // conectados a esa pareja, nunca por cualquier otro puerto del equipo.
     const requiredPort = arrivalPort ? pairedPort(arrivalPort) : null;
     const candidatePipes = state.canios.filter(p=>{
       if(p.id===excludePipeId) return false;
@@ -2016,7 +2032,15 @@
           const nivelBota = c.linkedCondition==='bajoBota' ? 'bajo' : 'alto';
           setAcumuladorBotaState(eq.id, activating ? nivelBota : 'normal');
         }
-        else if(c.linkedCondition) setTankState(eq.id, activating ? c.linkedCondition : 'normal');
+        else if(c.linkedCondition){
+          setTankState(eq.id, activating ? c.linkedCondition : 'normal');
+          // Si el checkbox de simulación automática está activo, esto también
+          // tiene que poder autocorregirse: si vos ponés "bajo nivel" a mano
+          // pero el tanque ya tiene caudal de ingreso, tiene que volver solo a
+          // la normalidad (y viceversa) — no alcanza con que sea manual para
+          // que quede pegado en un nivel que no corresponde al caudal real.
+          checkLevelDrift(eq.id);
+        }
       }
     }
     const label = causaLabel(c);
