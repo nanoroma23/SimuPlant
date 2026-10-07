@@ -16,7 +16,10 @@ self.addEventListener('install', e=>{
 self.addEventListener('activate', e=>{
   e.waitUntil(
     caches.keys()
-      .then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
+      // Solo se limpian cachés VIEJOS DE SIMUPLANT ('simuplant-...'). Otras apps del
+      // mismo origen (nanoroma23.github.io) comparten el almacenamiento de caché,
+      // así que borrar "todo lo que no sea mío" les borraría el suyo.
+      .then(keys=>Promise.all(keys.filter(k=>k.startsWith('simuplant-') && k!==CACHE).map(k=>caches.delete(k))))
       .then(()=>self.clients.claim())
   );
 });
