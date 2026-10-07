@@ -1,5 +1,5 @@
 {
-  "id": "./",
+  "id": "simuplant-trips",
   "name": "SimuPlant",
   "short_name": "SimuPlant",
   "description": "Simulador de trips de planta (P&ID + matriz causa-efecto)",
